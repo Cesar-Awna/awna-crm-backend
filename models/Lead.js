@@ -3,6 +3,17 @@ import paginate from 'mongoose-paginate-v2';
 
 const { Schema } = mongoose;
 
+export const LEAD_STATUSES = [
+    'NUEVO',
+    'DATO_ERRADO',
+    'CONTACTADO',
+    'INTERESADO',
+    'COTIZACION_ENVIADA',
+    'EN_SEGUIMIENTO',
+    'CERRADO_GANADO',
+    'CERRADO_PERDIDO',
+];
+
 const leadSchema = new Schema(
     {
         companyId: {
@@ -16,192 +27,60 @@ const leadSchema = new Schema(
             required: true,
             index: true,
         },
-        teamId: {
-            type: String,
-        },
         ownerUserId: {
             type: String,
-            required: true,
             index: true,
         },
         assignedByUserId: {
             type: String,
         },
-        source: {
+        razonSocial: {
             type: String,
-            enum: ['MANUAL', 'PRELOADED', 'IMPORT_CSV'],
+            trim: true,
+        },
+        rutEmpresa: {
+            type: String,
+            trim: true,
+        },
+        contactName: {
+            type: String,
+            trim: true,
+        },
+        contactEmail: {
+            type: String,
+            trim: true,
+            lowercase: true,
+        },
+        contactPhone: {
+            type: String,
+            trim: true,
         },
         status: {
             type: String,
-            enum: ['OPEN', 'WON', 'LOST'],
-            default: 'OPEN',
-        },
-        currentStageId: {
-            type: Schema.Types.ObjectId,
-            ref: 'FunnelStage',
-            required: true,
+            default: 'NUEVO',
+            enum: LEAD_STATUSES,
             index: true,
-        },
-        lastActivityAt: {
-            type: Date,
-        },
-        lastStageChangedAt: {
-            type: Date,
-        },
-        nextActionAt: {
-            type: Date,
-        },
-        nextActionType: {
-            type: String,
-            enum: ['CALL', 'MEETING', 'FOLLOWUP', 'DOCS'],
-        },
-        isDormant: {
-            type: Boolean,
-            default: false,
-        },
-        stagnationLevel: {
-            type: String,
-            enum: ['RISK', 'OVERDUE', 'CRITICAL'],
-        },
-        estimatedAmount: {
-            type: Number,
-        },
-        closedAmount: {
-            type: Number,
-        },
-        closedAt: {
-            type: Date,
-        },
-        lostReason: {
-            type: String,
-        },
-        // Cotización / portabilidad (formulario comercial)
-        segment: {
-            type: String,
-            enum: ['MICRO', 'PEQUENA', 'MEDIANA', 'GRANDE', 'GRANDE_1', 'CORPORACION'],
-        },
-        product: {
-            type: String,
-            enum: ['FIBRA_OPTICA', 'PLANES_MOVILES'],
-        },
-        contactZoneRole: {
-            type: String,
-            enum: ['REPRESENTANTE_LEGAL', 'GERENTE', 'OTRO'],
-        },
-        contactZoneRoleOther: {
-            type: String,
-            trim: true,
-        },
-        donorCompany: {
-            type: String,
-            trim: true,
-        },
-        quoteDate: {
-            type: Date,
-        },
-        activationDate: {
-            type: Date,
-        },
-        sigloFolio: {
-            type: String,
-            trim: true,
-        },
-        prepagoPortas: {
-            type: Number,
-            min: 0,
-        },
-        postpagoPortas: {
-            type: Number,
-            min: 0,
-        },
-        altasCount: {
-            type: Number,
-            min: 0,
         },
         observation: {
             type: String,
         },
-        supervisorUserId: {
-            type: String,
+        nextContactDate: {
+            type: Date,
             index: true,
         },
-        clientName: {
+        nextActionType: {
             type: String,
-            trim: true,
+            enum: ['LLAMADA', 'ENVIAR_INFO', 'REUNION', 'NOTA'],
         },
-        clientRut: {
-            type: String,
-            trim: true,
-        },
-        // Campos extendidos del formulario call center
-        openSubstatus: {
-            type: String,
-            enum: ['OPORTUNIDAD', 'EN_NEGOCIACION', 'EN_REVISION'],
-        },
-        wonSaleClosed: {
-            type: Boolean,
-            default: false,
-        },
-        mobileEnabled: {
-            type: Boolean,
-            default: false,
-        },
-        fixedEnabled: {
-            type: Boolean,
-            default: false,
-        },
-        mobileType: {
-            type: String,
-            enum: ['HABILITACION', 'PORTABILIDAD'],
-        },
-        mobileLines: {
-            type: Number,
-            min: 0,
-        },
-        fixedPack: {
-            type: String,
-            enum: ['TRIO', 'DUO', 'INDIVIDUAL'],
-        },
-        fixedDuoProducts: {
-            type: [String],
-            default: [],
-        },
-        fixedSingle: {
-            type: String,
-        },
-        fixedCommune: {
-            type: String,
-        },
-        fixedAddress: {
-            type: String,
-        },
-        fixedMap: {
-            type: String,
-        },
-        riskGrade: {
-            type: String,
-            enum: ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
-        },
-        riskHasProtesto: {
-            type: String,
-            enum: ['SI', 'NO'],
-        },
-        riskDicomTotal: {
-            type: Number,
-            min: 0,
-        },
-        riskDicomTelco: {
-            type: Number,
-            min: 0,
-        },
-        riskDeudaClaro: {
-            type: Number,
-            min: 0,
-        },
-        claroSegment: {
-            type: String,
-            enum: ['MICRO', 'PEQUENA', 'MEDIANA', 'GRANDE', 'GRANDE_1', 'CORPORACION'],
-        },
+        callCount:            { type: Number, default: 0 },
+        contactSuccessCount:  { type: Number, default: 0 },
+        followupCount:        { type: Number, default: 0 },
+        whatsappSentCount:    { type: Number, default: 0 },
+        emailSentCount:       { type: Number, default: 0 },
+        quoteSentCount:       { type: Number, default: 0 },
+        rescheduleCount:      { type: Number, default: 0 },
+        activityCounts:       { type: Map, of: Number, default: {} },
+        fields:               { type: Map, of: Schema.Types.Mixed, default: {} },
     },
     {
         timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
@@ -209,8 +88,7 @@ const leadSchema = new Schema(
 );
 
 leadSchema.index({ companyId: 1, businessUnitId: 1, ownerUserId: 1, status: 1 });
-leadSchema.index({ companyId: 1, businessUnitId: 1, nextActionAt: 1 });
-leadSchema.index({ companyId: 1, businessUnitId: 1, isDormant: 1, stagnationLevel: 1 });
+leadSchema.index({ companyId: 1, businessUnitId: 1, status: 1, createdAt: -1 });
 leadSchema.plugin(paginate);
 
 const Lead = mongoose.model('Lead', leadSchema);

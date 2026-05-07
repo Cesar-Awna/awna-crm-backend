@@ -1,7 +1,31 @@
 import connectMongoDB from '../libs/mongoose.js';
-import Lead from '../models/Lead.js';
+import Lead, { LEAD_STATUSES } from '../models/Lead.js';
 import LeadEvent from '../models/LeadEvent.js';
 import RankingPeriodScore from '../models/RankingPeriodScore.js';
+import BusinessUnit from '../models/BusinessUnit.js';
+import { getStageInfo } from '../utils/stageInfo.js';
+
+const DEFAULT_ACTIVITY_TYPES = [
+    { key: 'CALL',            label: 'Llamada realizada' },
+    { key: 'CONTACT_SUCCESS', label: 'Contacto efectivo' },
+    { key: 'FOLLOWUP',        label: 'Seguimiento realizado' },
+    { key: 'WHATSAPP_SENT',   label: 'WhatsApp enviado' },
+    { key: 'EMAIL_SENT',      label: 'Correo enviado' },
+    { key: 'QUOTE_SENT',      label: 'Cotización enviada' },
+    { key: 'RESCHEDULE',      label: 'Reagendamiento' },
+    { key: 'NOTE_ADDED',      label: 'Nota' },
+];
+
+const countsByStatus = async (baseFilter, statusKeys) => {
+    const entries = await Promise.all(
+        statusKeys.map((s) =>
+            Lead.countDocuments({ ...baseFilter, status: s }).then((n) => [s, n])
+        )
+    );
+    return Object.fromEntries(entries);
+};
+
+const sumKeys = (obj, keys) => keys.reduce((acc, k) => acc + (obj[k] || 0), 0);
 
 export default class MetricsService {
     constructor() {
@@ -18,18 +42,19 @@ export default class MetricsService {
             const filter = { companyId, businessUnitId };
             const userId = req.user?.id || req.user?._id;
             if (userId) filter.ownerUserId = userId;
-            const [openCount, wonCount, lostCount] = await Promise.all([
-                Lead.countDocuments({ ...filter, status: 'OPEN' }),
-                Lead.countDocuments({ ...filter, status: 'WON' }),
-                Lead.countDocuments({ ...filter, status: 'LOST' }),
-            ]);
-            const data = {
-                openLeads: openCount,
-                wonLeads: wonCount,
-                lostLeads: lostCount,
-                totalLeads: openCount + wonCount + lostCount,
+
+            const { statusKeys, wonKeys, lostKeys, closedKeys } = await getStageInfo(businessUnitId);
+            const byStatus  = await countsByStatus(filter, statusKeys);
+            const openLeads = sumKeys(byStatus, statusKeys.filter((k) => !closedKeys.includes(k)));
+            const wonLeads  = sumKeys(byStatus, wonKeys);
+            const lostLeads = sumKeys(byStatus, lostKeys);
+            const totalLeads = Object.values(byStatus).reduce((a, b) => a + b, 0);
+
+            return {
+                success: true,
+                message: 'Executive metrics retrieved',
+                data: { openLeads, wonLeads, lostLeads, totalLeads, byStatus },
             };
-            return { success: true, message: 'Executive metrics retrieved', data };
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving executive metrics' };
@@ -38,9 +63,9 @@ export default class MetricsService {
 
     getMyMetrics = async (req) => {
         try {
-            const companyId = req.companyId;
+            const companyId    = req.companyId;
             const businessUnitId = req.businessUnitId;
-            const userId = req.user?.id || req.user?._id;
+            const userId       = req.user?.id || req.user?._id;
 
             if (!companyId || !businessUnitId) {
                 return { success: false, message: 'Company and business unit context required' };
@@ -56,71 +81,51 @@ export default class MetricsService {
             startOfMonth.setHours(0, 0, 0, 0);
 
             const startOfWeek = new Date();
-            const dayOfWeek = startOfWeek.getDay();
-            const diff = startOfWeek.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+            const dayOfWeek   = startOfWeek.getDay();
+            const diff        = startOfWeek.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
             startOfWeek.setDate(diff);
             startOfWeek.setHours(0, 0, 0, 0);
 
-            const startOfDay = new Date();
-            startOfDay.setHours(0, 0, 0, 0);
-            const endOfDay = new Date();
-            endOfDay.setHours(23, 59, 59, 999);
+            const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } =
+                await getStageInfo(businessUnitId);
 
-            const [
-                openCount,
-                wonCount,
-                lostCount,
-                wonThisMonth,
-                lostThisMonth,
-                wonThisWeek,
-                totalAmount,
-                dueToday,
-                overdue,
-                byStage,
-                eventsThisWeek,
-                rankingData,
-            ] = await Promise.all([
-                Lead.countDocuments({ ...filter, status: 'OPEN' }),
-                Lead.countDocuments({ ...filter, status: 'WON' }),
-                Lead.countDocuments({ ...filter, status: 'LOST' }),
-                Lead.countDocuments({ ...filter, status: 'WON', closedAt: { $gte: startOfMonth } }),
-                Lead.countDocuments({ ...filter, status: 'LOST', closedAt: { $gte: startOfMonth } }),
-                Lead.countDocuments({ ...filter, status: 'WON', closedAt: { $gte: startOfWeek } }),
-                Lead.aggregate([
-                    { $match: { ...filter, status: 'WON', closedAt: { $gte: startOfMonth } } },
-                    { $group: { _id: null, total: { $sum: '$estimatedAmount' } } },
-                ]),
-                Lead.countDocuments({ ...filter, status: 'OPEN', nextActionAt: { $gte: startOfDay, $lte: endOfDay } }),
-                Lead.countDocuments({ ...filter, status: 'OPEN', nextActionAt: { $lt: startOfDay } }),
-                Lead.aggregate([
-                    { $match: { ...filter, status: 'OPEN' } },
-                    { $group: { _id: '$currentStageId', count: { $sum: 1 } } },
-                ]),
-                LeadEvent.countDocuments({ companyId, businessUnitId, userId: String(userId), createdAt: { $gte: startOfWeek } }),
-                RankingPeriodScore.findOne({ userId: String(userId), companyId, businessUnitId, periodType: 'MONTH' }).sort({ periodStart: -1 }).lean(),
-            ]);
+            const [byStatus, wonThisMonth, lostThisMonth, wonThisWeek, eventsThisWeek, rankingData] =
+                await Promise.all([
+                    countsByStatus(filter, statusKeys),
+                    Lead.countDocuments({ ...filter, status: { $in: wonKeys },  updatedAt: { $gte: startOfMonth } }),
+                    Lead.countDocuments({ ...filter, status: { $in: lostKeys }, updatedAt: { $gte: startOfMonth } }),
+                    Lead.countDocuments({ ...filter, status: { $in: wonKeys },  updatedAt: { $gte: startOfWeek } }),
+                    LeadEvent.countDocuments({ companyId, businessUnitId, userId: String(userId), createdAt: { $gte: startOfWeek } }),
+                    RankingPeriodScore.findOne({ userId: String(userId), companyId, businessUnitId, periodType: 'MONTH' })
+                        .sort({ periodStart: -1 })
+                        .lean(),
+                ]);
 
-            const closed = wonCount + lostCount;
-            const conversionRate = closed > 0 ? Math.round((wonCount / closed) * 100) : 0;
+            const openLeads     = sumKeys(byStatus, statusKeys.filter((k) => !closedKeys.includes(k)));
+            const wonLeads      = sumKeys(byStatus, wonKeys);
+            const lostLeads     = sumKeys(byStatus, lostKeys);
+            const invalidLeads  = sumKeys(byStatus, invalidKeys);
+            const closed        = wonLeads + lostLeads;
+            const conversionRate = closed > 0 ? Math.round((wonLeads / closed) * 100) : 0;
 
-            const data = {
-                openLeads: openCount,
-                wonLeads: wonCount,
-                lostLeads: lostCount,
-                totalLeads: openCount + wonCount + lostCount,
-                wonThisMonth,
-                lostThisMonth,
-                wonThisWeek,
-                totalAmountThisMonth: totalAmount[0]?.total || 0,
-                conversionRatePct: conversionRate,
-                dueToday,
-                overdue,
-                byStage,
-                eventsThisWeek,
-                currentRanking: rankingData || null,
+            return {
+                success: true,
+                message: 'My metrics retrieved',
+                data: {
+                    openLeads,
+                    wonLeads,
+                    lostLeads,
+                    invalidLeads,
+                    totalLeads: openLeads + wonLeads + lostLeads + invalidLeads,
+                    wonThisMonth,
+                    lostThisMonth,
+                    wonThisWeek,
+                    conversionRatePct: conversionRate,
+                    byStatus,
+                    eventsThisWeek,
+                    currentRanking: rankingData || null,
+                },
             };
-
-            return { success: true, message: 'My metrics retrieved', data };
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving my metrics' };
@@ -129,9 +134,9 @@ export default class MetricsService {
 
     getSupervisorMetrics = async (req) => {
         try {
-            const companyId = req.companyId;
+            const companyId      = req.companyId;
             const businessUnitId = req.businessUnitId;
-            const role = req.user?.role;
+            const role           = req.user?.role;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
@@ -143,14 +148,19 @@ export default class MetricsService {
             const filter = { companyId };
             if (businessUnitId) filter.businessUnitId = businessUnitId;
 
-            const byStatus = await Lead.aggregate([
-                { $match: filter },
-                { $group: { _id: '$status', count: { $sum: 1 } } },
-            ]);
-            const data = {
-                byStatus: byStatus.reduce((acc, x) => ({ ...acc, [x._id]: x.count }), {}),
+            const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } =
+                await getStageInfo(businessUnitId);
+            const byStatus   = await countsByStatus(filter, statusKeys);
+            const openLeads  = sumKeys(byStatus, statusKeys.filter((k) => !closedKeys.includes(k)));
+            const wonLeads   = sumKeys(byStatus, wonKeys);
+            const lostLeads  = sumKeys(byStatus, lostKeys);
+            const invalidLeads = sumKeys(byStatus, invalidKeys);
+
+            return {
+                success: true,
+                message: 'Supervisor metrics retrieved',
+                data: { byStatus, openLeads, wonLeads, lostLeads, invalidLeads },
             };
-            return { success: true, message: 'Supervisor metrics retrieved', data };
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving supervisor metrics' };
@@ -159,9 +169,9 @@ export default class MetricsService {
 
     getConversionMetrics = async (req) => {
         try {
-            const companyId = req.companyId;
+            const companyId      = req.companyId;
             const businessUnitId = req.businessUnitId;
-            const role = req.user?.role;
+            const role           = req.user?.role;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
@@ -173,61 +183,100 @@ export default class MetricsService {
             const filter = { companyId };
             if (businessUnitId) filter.businessUnitId = businessUnitId;
 
-            const [won, lost, open] = await Promise.all([
-                Lead.countDocuments({ ...filter, status: 'WON' }),
-                Lead.countDocuments({ ...filter, status: 'LOST' }),
-                Lead.countDocuments({ ...filter, status: 'OPEN' }),
-            ]);
-            const total = won + lost + open;
+            const { statusKeys, wonKeys, lostKeys, closedKeys } = await getStageInfo(businessUnitId);
+            const byStatus = await countsByStatus(filter, statusKeys);
+            const won    = sumKeys(byStatus, wonKeys);
+            const lost   = sumKeys(byStatus, lostKeys);
+            const open   = sumKeys(byStatus, statusKeys.filter((k) => !closedKeys.includes(k)));
+            const total  = Object.values(byStatus).reduce((a, b) => a + b, 0);
             const closed = won + lost;
             const conversionRate = closed > 0 ? Math.round((won / closed) * 100) : 0;
-            const data = {
-                won,
-                lost,
-                open,
-                total,
-                conversionRatePct: conversionRate,
+
+            return {
+                success: true,
+                message: 'Conversion metrics retrieved',
+                data: { won, lost, open, total, conversionRatePct: conversionRate, byStatus },
             };
-            return { success: true, message: 'Conversion metrics retrieved', data };
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving conversion metrics' };
         }
     };
 
-    getFunnelMetrics = async (req) => {
+    getActivityMetrics = async (req) => {
         try {
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            const role = req.user?.role;
+            const role      = req.user?.role;
 
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
-            }
+            if (!companyId) return { success: false, message: 'Company context required' };
+
+            const { period = 'today', userId } = req.query;
+            const businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
+
             if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
                 return { success: false, message: 'Business unit context required' };
             }
 
-            const filter = { status: 'OPEN', companyId };
-            if (businessUnitId) filter.businessUnitId = businessUnitId;
+            const now = new Date();
+            let from;
+            if (period === 'week') {
+                from = new Date(now);
+                const day = from.getDay();
+                from.setDate(from.getDate() - day + (day === 0 ? -6 : 1));
+                from.setHours(0, 0, 0, 0);
+            } else if (period === 'month') {
+                from = new Date(now);
+                from.setDate(1);
+                from.setHours(0, 0, 0, 0);
+            } else {
+                from = new Date(now);
+                from.setHours(0, 0, 0, 0);
+            }
 
-            const byStage = await Lead.aggregate([
-                { $match: filter },
-                { $group: { _id: '$currentStageId', count: { $sum: 1 } } },
-            ]);
-            const data = { byStage };
-            return { success: true, message: 'Funnel metrics retrieved', data };
+            const filter = { companyId, eventAt: { $gte: from } };
+            if (businessUnitId) filter.businessUnitId = businessUnitId;
+            if (userId) filter.userId = userId;
+            if (role === 'EXECUTIVE') filter.userId = String(req.user?.id || req.user?._id);
+
+            let activityTypeDefs = [];
+            if (businessUnitId) {
+                const bu = await BusinessUnit.findById(businessUnitId).select('activityTypes').lean();
+                if (bu?.activityTypes?.length > 0) {
+                    activityTypeDefs = bu.activityTypes.map((a) => ({ key: a.key, label: a.label }));
+                }
+            }
+            if (activityTypeDefs.length === 0) activityTypeDefs = DEFAULT_ACTIVITY_TYPES;
+
+            const entries = await Promise.all(
+                activityTypeDefs.map(({ key: t }) =>
+                    LeadEvent.countDocuments({ ...filter, eventType: t }).then((n) => [t, n])
+                )
+            );
+            const byType = Object.fromEntries(entries);
+
+            const { wonKeys } = await getStageInfo(businessUnitId);
+            const wonFilter   = { companyId, status: { $in: wonKeys }, updatedAt: { $gte: from } };
+            if (businessUnitId) wonFilter.businessUnitId = businessUnitId;
+            if (userId) wonFilter.ownerUserId = userId;
+            if (role === 'EXECUTIVE') wonFilter.ownerUserId = String(req.user?.id || req.user?._id);
+            const closures = await Lead.countDocuments(wonFilter);
+
+            return {
+                success: true,
+                message: 'Activity metrics retrieved',
+                data: { period, from, byType, closures, activityTypes: activityTypeDefs },
+            };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return { success: false, message: 'Error retrieving funnel metrics' };
+            return { success: false, message: 'Error retrieving activity metrics' };
         }
     };
 
     getSummaryMetrics = async (req) => {
         try {
-            const companyId = req.companyId;
+            const companyId      = req.companyId;
             const businessUnitId = req.businessUnitId;
-            const role = req.user?.role;
+            const role           = req.user?.role;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
@@ -239,19 +288,24 @@ export default class MetricsService {
             const filter = { companyId };
             if (businessUnitId) filter.businessUnitId = businessUnitId;
 
-            const [open, won, lost, eventCount] = await Promise.all([
-                Lead.countDocuments({ ...filter, status: 'OPEN' }),
-                Lead.countDocuments({ ...filter, status: 'WON' }),
-                Lead.countDocuments({ ...filter, status: 'LOST' }),
+            const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } =
+                await getStageInfo(businessUnitId);
+
+            const [byStatus, eventCount] = await Promise.all([
+                countsByStatus(filter, statusKeys),
                 LeadEvent.countDocuments(filter),
             ]);
-            const data = {
-                openLeads: open,
-                wonLeads: won,
-                lostLeads: lost,
-                totalEvents: eventCount,
+
+            const openLeads   = sumKeys(byStatus, statusKeys.filter((k) => !closedKeys.includes(k)));
+            const wonLeads    = sumKeys(byStatus, wonKeys);
+            const lostLeads   = sumKeys(byStatus, lostKeys);
+            const invalidLeads = sumKeys(byStatus, invalidKeys);
+
+            return {
+                success: true,
+                message: 'Summary metrics retrieved',
+                data: { openLeads, wonLeads, lostLeads, invalidLeads, byStatus, totalEvents: eventCount },
             };
-            return { success: true, message: 'Summary metrics retrieved', data };
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving summary metrics' };

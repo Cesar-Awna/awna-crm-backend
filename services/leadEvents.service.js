@@ -1,4 +1,5 @@
 import connectMongoDB from '../libs/mongoose.js';
+import { parsePaginationParams, formatPaginatedResponse } from '../utils/pagination.js';
 import LeadEvent from '../models/LeadEvent.js';
 
 export default class LeadEventsService {
@@ -13,15 +14,29 @@ export default class LeadEventsService {
             if (!companyId || !businessUnitId) {
                 return { success: false, message: 'Company and business unit context required' };
             }
-            const { leadId } = req.query || {};
+
+            const { leadId, eventType, dateFrom, dateTo, userId, page, limit, sort } = req.query || {};
             const filter = { companyId, businessUnitId };
+
             if (leadId) filter.leadId = leadId;
-            const data = await LeadEvent.find(filter).sort({ eventAt: -1 }).lean();
-            return {
-                success: true,
-                message: 'Lead events retrieved successfully',
-                data,
-            };
+            if (eventType) filter.eventType = eventType;
+            if (userId) filter.userId = userId;
+
+            if (dateFrom || dateTo) {
+                filter.eventAt = {};
+                if (dateFrom) filter.eventAt.$gte = new Date(dateFrom);
+                if (dateTo) filter.eventAt.$lte = new Date(dateTo);
+            }
+
+            const paginationParams = parsePaginationParams({ page, limit, sort });
+            const result = await LeadEvent.paginate(filter, {
+                page: paginationParams.page,
+                limit: paginationParams.limit,
+                sort: paginationParams.sort,
+                lean: true,
+            });
+
+            return formatPaginatedResponse(result);
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving lead events' };

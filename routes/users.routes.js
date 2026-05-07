@@ -3,6 +3,9 @@ import UsersController from '../controllers/users.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import requireRole from '../middlewares/requireRole.middleware.js';
 import requireCompanyMiddleware from '../middlewares/requireCompany.middleware.js';
+import validate from '../middlewares/validate.middleware.js';
+import { createUserSchema, updateUserSchema } from '../validators/users.validator.js';
+import { changePasswordSchema } from '../validators/auth.validator.js';
 
 const router = express.Router();
 const usersController = new UsersController();
@@ -37,12 +40,14 @@ router.get(
 router.post(
     '/',
     requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN']),
+    validate(createUserSchema),
     usersController.create
 );
 
 router.put(
     '/:id',
     requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN']),
+    validate(updateUserSchema),
     usersController.update
 );
 
@@ -68,6 +73,13 @@ router.patch(
     '/:id/assign-team',
     requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR']),
     usersController.assignTeam
+);
+
+router.patch(
+    '/me/change-password',
+    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE']),
+    validate(changePasswordSchema),
+    usersController.changePassword
 );
 
 export default router;

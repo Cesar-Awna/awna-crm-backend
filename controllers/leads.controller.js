@@ -9,10 +9,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -22,10 +19,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 404).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -35,10 +29,7 @@ export default class LeadsController {
             return res.status(response.success ? 201 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -48,10 +39,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 404).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -61,62 +49,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
-        }
-    };
-
-    getByCompanyRut = async (req, res) => {
-        try {
-            const response = await leadsService.getByCompanyRut(req);
-            return res.status(response.success ? 200 : 404).json(response);
-        } catch (error) {
-            console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
-        }
-    };
-
-    getByCompanyName = async (req, res) => {
-        try {
-            const response = await leadsService.getByCompanyName(req);
-            return res.status(response.success ? 200 : 400).json(response);
-        } catch (error) {
-            console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
-        }
-    };
-
-    getDormant = async (req, res) => {
-        try {
-            const response = await leadsService.getDormant(req);
-            return res.status(response.success ? 200 : 400).json(response);
-        } catch (error) {
-            console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
-        }
-    };
-
-    getStagnant = async (req, res) => {
-        try {
-            const response = await leadsService.getStagnant(req);
-            return res.status(response.success ? 200 : 400).json(response);
-        } catch (error) {
-            console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -126,10 +59,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -139,23 +69,17 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
-    changeStage = async (req, res) => {
+    changeStatus = async (req, res) => {
         try {
-            const response = await leadsService.changeStage(req);
+            const response = await leadsService.changeStatus(req);
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -165,36 +89,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
-        }
-    };
-
-    scheduleMeeting = async (req, res) => {
-        try {
-            const response = await leadsService.scheduleMeeting(req);
-            return res.status(response.success ? 200 : 400).json(response);
-        } catch (error) {
-            console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
-        }
-    };
-
-    setNextAction = async (req, res) => {
-        try {
-            const response = await leadsService.setNextAction(req);
-            return res.status(response.success ? 200 : 400).json(response);
-        } catch (error) {
-            console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -204,10 +99,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -217,36 +109,27 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
-    markWon = async (req, res) => {
+    logActivity = async (req, res) => {
         try {
-            const response = await leadsService.markWon(req);
+            const response = await leadsService.logActivity(req);
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
-    markLost = async (req, res) => {
+    getEvents = async (req, res) => {
         try {
-            const response = await leadsService.markLost(req);
+            const response = await leadsService.getEvents(req);
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -256,23 +139,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
-        }
-    };
-
-    getWorkloadByExecutive = async (req, res) => {
-        try {
-            const response = await leadsService.getWorkloadByExecutive(req);
-            return res.status(response.success ? 200 : 400).json(response);
-        } catch (error) {
-            console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -282,10 +149,17 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
+        }
+    };
+
+    bulkImport = async (req, res) => {
+        try {
+            const response = await leadsService.bulkImport(req);
+            return res.status(response.success ? 201 : 400).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 
@@ -295,10 +169,7 @@ export default class LeadsController {
             return res.status(response.success ? 200 : 400).json(response);
         } catch (error) {
             console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 }

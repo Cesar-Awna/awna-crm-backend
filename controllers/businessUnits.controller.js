@@ -55,6 +55,26 @@ export default class BusinessUnitsController {
         }
     };
 
+    getSchema = async (req, res) => {
+        try {
+            const response = await businessUnitsService.getSchema(req);
+            return res.status(response.success ? 200 : 404).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
+        }
+    };
+
+    updateSchema = async (req, res) => {
+        try {
+            const response = await businessUnitsService.updateSchema(req);
+            return res.status(response.success ? 200 : 404).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
+        }
+    };
+
     delete = async (req, res) => {
         try {
             const response = await businessUnitsService.delete(req);

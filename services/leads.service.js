@@ -1,8 +1,10 @@
 import connectMongoDB from '../libs/mongoose.js';
-import Lead from '../models/Lead.js';
+import Lead, { LEAD_STATUSES } from '../models/Lead.js';
 import LeadEvent from '../models/LeadEvent.js';
-import LeadCompany from '../models/LeadCompany.js';
-import FunnelStage from '../models/FunnelStage.js';
+import User from '../models/User.js';
+import BusinessUnit from '../models/BusinessUnit.js';
+import { getStageInfo } from '../utils/stageInfo.js';
+import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 
 export default class LeadsService {
     constructor() {
@@ -15,41 +17,45 @@ export default class LeadsService {
             const businessUnitId = req.businessUnitId;
             const role = req.user?.role;
 
-            // COMPANY_ADMIN can query all BUs (businessUnitId = null)
             if (!companyId) {
-                return { success: false, message: 'Company context required' };
+                return formatPaginationError('Company context required');
             }
             if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
-                return { success: false, message: 'Business unit context required' };
+                return formatPaginationError('Business unit context required');
             }
 
-            const { status, ownerUserId, stageId } = req.query || {};
+            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo } = req.query || {};
             const filter = { companyId };
 
-            // Only filter by BU if provided
             if (businessUnitId) {
                 filter.businessUnitId = businessUnitId;
             }
             if (status) filter.status = status;
             if (ownerUserId) filter.ownerUserId = ownerUserId;
-            if (stageId) filter.currentStageId = stageId;
+            if (nextContactDateFrom || nextContactDateTo) {
+                filter.nextContactDate = {};
+                if (nextContactDateFrom) filter.nextContactDate.$gte = new Date(nextContactDateFrom);
+                if (nextContactDateTo) filter.nextContactDate.$lte = new Date(nextContactDateTo);
+            }
 
-            const isExecutive = role === 'EXECUTIVE';
-            if (isExecutive) filter.ownerUserId = req.user?.id || req.user?._id;
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
 
-            const data = await Lead.find(filter).lean();
+            const { page, limit, sort } = parsePaginationParams(req);
+
+            const result = await Lead.paginate(filter, {
+                page,
+                limit,
+                sort,
+                lean: true,
+            });
 
             return {
-                success: true,
+                ...formatPaginatedResponse(result),
                 message: 'Leads retrieved successfully',
-                data,
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error retrieving leads',
-            };
+            return formatPaginationError('Error retrieving leads');
         }
     };
 
@@ -76,10 +82,7 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error retrieving lead',
-            };
+            return { success: false, message: 'Error retrieving lead' };
         }
     };
 
@@ -91,37 +94,24 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
             const payload = { ...req.body, companyId, businessUnitId };
-            if (!payload.currentStageId) {
-                let initialStage = await FunnelStage.findOne({ companyId, businessUnitId })
-                    .sort({ stageOrder: 1 })
-                    .lean();
-                if (!initialStage) {
-                    initialStage = await FunnelStage.create({
-                        companyId,
-                        businessUnitId,
-                        stageOrder: 1,
-                        name: 'Nuevo',
-                        isFinal: false,
-                    });
+            const role = req.user?.role;
+
+            if (role === 'SUPERVISOR' || role === 'COMPANY_ADMIN') {
+                if (!payload.ownerUserId) {
+                    return { success: false, message: 'Debes asignar el lead a un ejecutivo.' };
                 }
-                payload.currentStageId = initialStage?._id;
-            }
-            if (!payload.ownerUserId && req.user?.role === 'EXECUTIVE') {
+                const owner = await User.findById(payload.ownerUserId).lean();
+                if (!owner || owner.roleName !== 'EXECUTIVE') {
+                    return { success: false, message: 'El lead debe asignarse a un ejecutivo válido.' };
+                }
+            } else {
                 payload.ownerUserId = req.user?.id || req.user?._id;
             }
-            // Para SUPERVISOR/COMPANY_ADMIN también definimos owner por defecto
-            // para cumplir el schema requerido.
-            if (!payload.ownerUserId) {
-                payload.ownerUserId = req.user?.id || req.user?._id;
+
+            if (!payload.status) {
+                payload.status = 'NUEVO';
             }
-            if (payload.status === 'WON' || payload.status === 'LOST') {
-                if (!payload.closedAt) {
-                    payload.closedAt = new Date();
-                }
-            }
-            if (payload.status === 'LOST' && payload.observation && !payload.lostReason) {
-                payload.lostReason = payload.observation;
-            }
+
             const data = await Lead.create(payload);
 
             return {
@@ -131,10 +121,7 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error creating lead',
-            };
+            return { success: false, message: error?.message || 'Error creating lead' };
         }
     };
 
@@ -153,11 +140,7 @@ export default class LeadsService {
             const updateBody = { ...req.body };
             delete updateBody.companyId;
             delete updateBody.businessUnitId;
-            if (updateBody.status === 'WON' || updateBody.status === 'LOST') {
-                if (!updateBody.closedAt) {
-                    updateBody.closedAt = new Date();
-                }
-            }
+
             const data = await Lead.findOneAndUpdate(filter, updateBody, {
                 new: true,
                 lean: true,
@@ -173,10 +156,7 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error updating lead',
-            };
+            return { success: false, message: error?.message || 'Error updating lead' };
         }
     };
 
@@ -187,14 +167,28 @@ export default class LeadsService {
             if (!companyId || !businessUnitId) {
                 return { success: false, message: 'Company and business unit context required' };
             }
-            const { status, source } = req.query || {};
+            const { status, q } = req.query || {};
             const filter = { companyId, businessUnitId };
             if (status) filter.status = status;
-            if (source) filter.source = source;
+            if (q) {
+                const rx = new RegExp(q, 'i');
+                const bu = await BusinessUnit.findById(businessUnitId).select('leadSchema').lean();
+                const schemaFields = (bu?.leadSchema || []).filter(
+                    (f) => f.type !== 'number' && f.type !== 'date'
+                );
+                filter.$or = [
+                    { razonSocial: rx },
+                    { rutEmpresa: rx },
+                    { contactName: rx },
+                    { contactEmail: rx },
+                    { contactPhone: rx },
+                    ...schemaFields.map((f) => ({ [`fields.${f.key}`]: rx })),
+                ];
+            }
             if (req.user?.role === 'EXECUTIVE') {
                 filter.ownerUserId = req.user?.id || req.user?._id;
             }
-            const data = await Lead.find(filter).lean();
+            const data = await Lead.find(filter).sort({ createdAt: -1 }).lean();
             return {
                 success: true,
                 message: 'Search completed successfully',
@@ -206,129 +200,6 @@ export default class LeadsService {
         }
     };
 
-    getByCompanyRut = async (req) => {
-        try {
-            const { rut } = req.params;
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
-            }
-            const companies = await LeadCompany.find({ companyRut: rut, companyId }).lean();
-            if (!companies.length) {
-                return { success: true, message: 'No leads found for company RUT', data: [] };
-            }
-            const leadIds = companies.map((c) => c.leadId);
-            const filter = { _id: { $in: leadIds }, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
-            const data = await Lead.find(filter).lean();
-            return {
-                success: true,
-                message: 'Leads by company RUT retrieved successfully',
-                data,
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return { success: false, message: 'Error retrieving leads by company RUT' };
-        }
-    };
-
-    getByCompanyName = async (req) => {
-        try {
-            const { name } = req.params;
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
-            }
-            const lcFilter = name ? { companyName: new RegExp(name, 'i'), companyId } : { companyId };
-            const companies = await LeadCompany.find(lcFilter).lean();
-            if (!companies.length) {
-                return { success: true, message: 'No leads found for company name', data: [] };
-            }
-            const leadIds = companies.map((c) => c.leadId);
-            const filter = { _id: { $in: leadIds }, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
-            const data = await Lead.find(filter).lean();
-            return {
-                success: true,
-                message: 'Leads by company name retrieved successfully',
-                data,
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return { success: false, message: 'Error retrieving leads by company name' };
-        }
-    };
-
-    getDormant = async (req) => {
-        try {
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            const role = req.user?.role;
-
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
-            }
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
-                return { success: false, message: 'Business unit context required' };
-            }
-
-            const filter = { isDormant: true, status: 'OPEN', companyId };
-            if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
-            if (role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            }
-
-            const data = await Lead.find(filter).lean();
-            return {
-                success: true,
-                message: 'Dormant leads retrieved successfully',
-                data,
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return { success: false, message: 'Error retrieving dormant leads' };
-        }
-    };
-
-    getStagnant = async (req) => {
-        try {
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            const role = req.user?.role;
-
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
-            }
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
-                return { success: false, message: 'Business unit context required' };
-            }
-
-            const { stagnationLevel } = req.query || {};
-            const filter = { status: 'OPEN', stagnationLevel: { $exists: true, $ne: null }, companyId };
-            if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
-            if (stagnationLevel) filter.stagnationLevel = stagnationLevel;
-            if (role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            }
-
-            const data = await Lead.find(filter).lean();
-            return {
-                success: true,
-                message: 'Stagnant leads retrieved successfully',
-                data,
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return { success: false, message: 'Error retrieving stagnant leads' };
-        }
-    };
-
     getAssignedList = async (req) => {
         try {
             const companyId = req.companyId;
@@ -336,11 +207,16 @@ export default class LeadsService {
             if (!companyId || !businessUnitId) {
                 return { success: false, message: 'Company and business unit context required' };
             }
-            const filter = { companyId, businessUnitId, status: 'OPEN' };
+            const { closedKeys } = await getStageInfo(businessUnitId);
+            const filter = {
+                companyId,
+                businessUnitId,
+                status: { $nin: closedKeys },
+            };
             if (req.user?.role === 'EXECUTIVE') {
                 filter.ownerUserId = req.user?.id || req.user?._id;
             }
-            const data = await Lead.find(filter).lean();
+            const data = await Lead.find(filter).sort({ createdAt: -1 }).lean();
 
             return {
                 success: true,
@@ -349,10 +225,7 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error retrieving assigned leads',
-            };
+            return { success: false, message: 'Error retrieving assigned leads' };
         }
     };
 
@@ -364,160 +237,73 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
             const userId = req.user?.id || req.user?._id;
-            const baseFilter = { companyId, businessUnitId, status: 'OPEN' };
+            const baseFilter = { companyId, businessUnitId };
             if (req.user?.role === 'EXECUTIVE') {
                 baseFilter.ownerUserId = userId;
             }
 
-            const startOfDay = new Date();
-            startOfDay.setHours(0, 0, 0, 0);
-            const endOfDay = new Date();
-            endOfDay.setHours(23, 59, 59, 999);
-
-            const startOfMonth = new Date();
+            const now = new Date();
+            const startOfMonth = new Date(now);
             startOfMonth.setDate(1);
             startOfMonth.setHours(0, 0, 0, 0);
 
-            const [
-                dueToday,
-                overdue,
-                noNextAction,
-                openLeads,
-                wonThisMonth,
-                lostThisMonth,
-                leadsDueToday,
-                leadsOverdue,
-                meetingsToday,
-            ] = await Promise.all([
-                Lead.countDocuments({
-                    ...baseFilter,
-                    nextActionAt: { $gte: startOfDay, $lte: endOfDay },
-                }),
-                Lead.countDocuments({
-                    ...baseFilter,
-                    nextActionAt: { $lt: startOfDay },
-                }),
-                Lead.countDocuments({
-                    ...baseFilter,
-                    nextActionAt: { $exists: false },
-                }),
-                Lead.countDocuments({ ...baseFilter }),
-                Lead.countDocuments({
-                    companyId,
-                    businessUnitId,
-                    ownerUserId: userId,
-                    status: 'WON',
-                    closedAt: { $gte: startOfMonth },
-                }),
-                Lead.countDocuments({
-                    companyId,
-                    businessUnitId,
-                    ownerUserId: userId,
-                    status: 'LOST',
-                    closedAt: { $gte: startOfMonth },
-                }),
-                Lead.find({
-                    ...baseFilter,
-                    nextActionAt: { $gte: startOfDay, $lte: endOfDay },
-                })
-                    .limit(10)
-                    .lean(),
-                Lead.find({
-                    ...baseFilter,
-                    nextActionAt: { $lt: startOfDay },
-                })
-                    .sort({ nextActionAt: 1 })
-                    .limit(10)
-                    .lean(),
-                LeadEvent.find({
-                    companyId,
-                    businessUnitId,
-                    userId: String(userId),
-                    eventType: 'MEETING_SCHEDULED',
-                    eventAt: { $gte: startOfDay, $lte: endOfDay },
-                })
-                    .sort({ eventAt: 1 })
-                    .lean(),
+            const startOfToday = new Date(now);
+            startOfToday.setHours(0, 0, 0, 0);
+
+            const [buData, stageInfo] = await Promise.all([
+                BusinessUnit.findById(businessUnitId).select('activityTypes').lean(),
+                getStageInfo(businessUnitId),
             ]);
+            const ACTIVITY_TYPES = buData?.activityTypes?.length > 0
+                ? buData.activityTypes.map((a) => a.key)
+                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+            const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } = stageInfo;
+            const eventFilter = {
+                companyId,
+                businessUnitId,
+                userId: String(userId),
+                eventAt: { $gte: startOfToday },
+            };
+
+            const [countsArr, wonThisMonth, lostThisMonth, todayEventEntries] = await Promise.all([
+                Promise.all(
+                    statusKeys.map((s) =>
+                        Lead.countDocuments({ ...baseFilter, status: s }).then((n) => [s, n])
+                    )
+                ),
+                Lead.countDocuments({ ...baseFilter, status: { $in: wonKeys },  updatedAt: { $gte: startOfMonth } }),
+                Lead.countDocuments({ ...baseFilter, status: { $in: lostKeys }, updatedAt: { $gte: startOfMonth } }),
+                Promise.all(
+                    ACTIVITY_TYPES.map((t) =>
+                        LeadEvent.countDocuments({ ...eventFilter, eventType: t }).then((n) => [t, n])
+                    )
+                ),
+            ]);
+
+            const byStatus = Object.fromEntries(countsArr);
+            const todayByActivity = Object.fromEntries(todayEventEntries);
+            const invalidCount = invalidKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
+            const openCount    = statusKeys.filter((k) => !closedKeys.includes(k)).reduce((acc, k) => acc + (byStatus[k] || 0), 0);
 
             return {
                 success: true,
                 message: 'My day summary calculated successfully',
                 data: {
                     counts: {
-                        dueToday,
-                        overdue,
-                        noNextAction,
-                        openLeads,
+                        byStatus,
                         wonThisMonth,
                         lostThisMonth,
+                        invalidCount,
+                        openCount,
                     },
-                    leadsDueToday,
-                    leadsOverdue,
-                    meetingsToday,
+                    todayActivity: {
+                        byType: todayByActivity,
+                    },
                 },
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error calculating my day summary',
-            };
-        }
-    };
-
-    changeStage = async (req) => {
-        try {
-            const { id } = req.params;
-            const { stageId } = req.body || {};
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
-            }
-            if (!stageId) {
-                return {
-                    success: false,
-                    message: 'stageId is required',
-                };
-            }
-            const now = new Date();
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
-            const lead = await Lead.findOneAndUpdate(
-                filter,
-                {
-                    currentStageId: stageId,
-                    lastStageChangedAt: now,
-                },
-                { new: true, lean: true }
-            );
-            if (!lead) {
-                return { success: false, message: 'Lead not found' };
-            }
-            await LeadEvent.create({
-                companyId: lead.companyId,
-                businessUnitId: lead.businessUnitId,
-                leadId: lead._id,
-                userId: req.user?.id || req.body.userId || '',
-                eventType: 'STAGE_CHANGED',
-                eventAt: now,
-                metadata: {
-                    newStageId: stageId,
-                },
-            });
-
-            return {
-                success: true,
-                message: 'Lead stage changed successfully',
-                data: lead,
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error changing lead stage',
-            };
+            return { success: false, message: 'Error calculating my day summary' };
         }
     };
 
@@ -537,10 +323,7 @@ export default class LeadsService {
                 return { success: false, message: 'Lead not found' };
             }
 
-            const eventType =
-                outcome === 'SUCCESS' ? 'CONTACT_SUCCESS' : 'CONTACT_ATTEMPT';
-
-            const now = new Date();
+            const eventType = outcome === 'SUCCESS' ? 'CONTACT_SUCCESS' : 'CONTACT_ATTEMPT';
 
             await LeadEvent.create({
                 companyId: lead.companyId,
@@ -548,11 +331,9 @@ export default class LeadsService {
                 leadId: lead._id,
                 userId: req.user?.id || req.body.userId || '',
                 eventType,
-                eventAt: now,
+                eventAt: new Date(),
                 metadata: { notes, outcome },
             });
-
-            await Lead.findOneAndUpdate({ _id: id, companyId, businessUnitId }, { lastActivityAt: now });
 
             return {
                 success: true,
@@ -561,99 +342,7 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error registering contact',
-            };
-        }
-    };
-
-    scheduleMeeting = async (req) => {
-        try {
-            const { id } = req.params;
-            const { scheduledAt, location, notes } = req.body || {};
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
-            }
-            if (!scheduledAt) {
-                return {
-                    success: false,
-                    message: 'scheduledAt is required',
-                };
-            }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
-            const lead = await Lead.findOne(filter).lean();
-            if (!lead) {
-                return { success: false, message: 'Lead not found' };
-            }
-
-            const when = new Date(scheduledAt);
-
-            await LeadEvent.create({
-                companyId: lead.companyId,
-                businessUnitId: lead.businessUnitId,
-                leadId: lead._id,
-                userId: req.user?.id || req.body.userId || '',
-                eventType: 'MEETING_SCHEDULED',
-                eventAt: when,
-                metadata: { location, notes },
-            });
-
-            await Lead.findOneAndUpdate(
-                { _id: id, companyId, businessUnitId },
-                { nextActionAt: when, nextActionType: 'MEETING' }
-            );
-
-            return {
-                success: true,
-                message: 'Meeting scheduled successfully',
-                data: {},
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error scheduling meeting',
-            };
-        }
-    };
-
-    setNextAction = async (req) => {
-        try {
-            const { id } = req.params;
-            const { nextActionAt, nextActionType } = req.body || {};
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
-            }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
-            const update = {};
-            if (nextActionAt) update.nextActionAt = new Date(nextActionAt);
-            if (nextActionType) update.nextActionType = nextActionType;
-            const lead = await Lead.findOneAndUpdate(filter, update, {
-                new: true,
-                lean: true,
-            });
-            if (!lead) {
-                return { success: false, message: 'Lead not found' };
-            }
-
-            return {
-                success: true,
-                message: 'Next action updated successfully',
-                data: lead,
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error updating next action',
-            };
+            return { success: false, message: 'Error registering contact' };
         }
     };
 
@@ -667,10 +356,7 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
             if (!ownerUserId) {
-                return {
-                    success: false,
-                    message: 'ownerUserId is required',
-                };
+                return { success: false, message: 'ownerUserId is required' };
             }
             const assignedByUserId = req.user?.id || req.user?._id || req.body.assignedByUserId || '';
             const filter = { _id: id, companyId, businessUnitId };
@@ -690,10 +376,7 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error assigning lead',
-            };
+            return { success: false, message: 'Error assigning lead' };
         }
     };
 
@@ -707,10 +390,7 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
             if (!note) {
-                return {
-                    success: false,
-                    message: 'note is required',
-                };
+                return { success: false, message: 'note is required' };
             }
             const filter = { _id: id, companyId, businessUnitId };
             if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
@@ -736,186 +416,59 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error adding note',
-            };
+            return { success: false, message: 'Error adding note' };
         }
     };
 
-    markWon = async (req) => {
+    changeStatus = async (req) => {
         try {
             const { id } = req.params;
-            const { closedAmount } = req.body || {};
+            const { status } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
             if (!companyId || !businessUnitId) {
                 return { success: false, message: 'Company and business unit context required' };
             }
-            const now = new Date();
+            const buForStatus = await BusinessUnit.findById(businessUnitId).select('pipelineStages').lean();
+        const validStatuses = buForStatus?.pipelineStages?.length > 0
+            ? buForStatus.pipelineStages.map((s) => s.key)
+            : LEAD_STATUSES;
+        if (!status || !validStatuses.includes(status)) {
+            return { success: false, message: 'Invalid status' };
+        }
             const filter = { _id: id, companyId, businessUnitId };
             if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+
             const lead = await Lead.findOneAndUpdate(
                 filter,
-                {
-                    status: 'WON',
-                    closedAt: now,
-                    closedAmount: closedAmount ?? undefined,
-                },
+                { status },
                 { new: true, lean: true }
             );
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
             }
 
+            const matchedStage = buForStatus?.pipelineStages?.find((s) => s.key === status);
+            const stageType    = matchedStage?.stageType || null;
+            const eventType    = stageType === 'won' ? 'WON' : stageType === 'lost' ? 'LOST' : 'NOTE_ADDED';
             await LeadEvent.create({
                 companyId: lead.companyId,
                 businessUnitId: lead.businessUnitId,
                 leadId: lead._id,
-                userId: req.user?.id || req.body.userId || '',
-                eventType: 'WON',
-                eventAt: now,
-                metadata: { closedAmount },
+                userId: req.user?.id || '',
+                eventType,
+                eventAt: new Date(),
+                metadata: { status },
             });
 
             return {
                 success: true,
-                message: 'Lead marked as won',
+                message: 'Lead status changed successfully',
                 data: lead,
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error marking lead as won',
-            };
-        }
-    };
-
-    markLost = async (req) => {
-        try {
-            const { id } = req.params;
-            const { lostReason } = req.body || {};
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
-            }
-            const now = new Date();
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
-            const lead = await Lead.findOneAndUpdate(
-                filter,
-                {
-                    status: 'LOST',
-                    closedAt: now,
-                    lostReason: lostReason ?? undefined,
-                },
-                { new: true, lean: true }
-            );
-            if (!lead) {
-                return { success: false, message: 'Lead not found' };
-            }
-
-            await LeadEvent.create({
-                companyId: lead.companyId,
-                businessUnitId: lead.businessUnitId,
-                leadId: lead._id,
-                userId: req.user?.id || req.body.userId || '',
-                eventType: 'LOST',
-                eventAt: now,
-                metadata: { lostReason },
-            });
-
-            return {
-                success: true,
-                message: 'Lead marked as lost',
-                data: lead,
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error marking lead as lost',
-            };
-        }
-    };
-
-    getWorkloadByExecutive = async (req) => {
-        try {
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            const role = req.user?.role;
-
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
-            }
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
-                return { success: false, message: 'Business unit context required' };
-            }
-
-            const filter = { companyId };
-            if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
-
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
-            startOfMonth.setHours(0, 0, 0, 0);
-
-            const workload = await Lead.aggregate([
-                { $match: filter },
-                {
-                    $group: {
-                        _id: '$ownerUserId',
-                        openLeads: {
-                            $sum: { $cond: [{ $eq: ['$status', 'OPEN'] }, 1, 0] },
-                        },
-                        wonLeads: {
-                            $sum: {
-                                $cond: [
-                                    {
-                                        $and: [
-                                            { $eq: ['$status', 'WON'] },
-                                            { $gte: ['$closedAt', startOfMonth] },
-                                        ],
-                                    },
-                                    1,
-                                    0,
-                                ],
-                            },
-                        },
-                        lostLeads: {
-                            $sum: {
-                                $cond: [
-                                    {
-                                        $and: [
-                                            { $eq: ['$status', 'LOST'] },
-                                            { $gte: ['$closedAt', startOfMonth] },
-                                        ],
-                                    },
-                                    1,
-                                    0,
-                                ],
-                            },
-                        },
-                        totalLeads: { $sum: 1 },
-                    },
-                },
-                { $sort: { openLeads: -1 } },
-            ]);
-
-            return {
-                success: true,
-                message: 'Workload by executive retrieved successfully',
-                data: workload,
-            };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error retrieving workload by executive',
-            };
+            return { success: false, message: 'Error changing lead status' };
         }
     };
 
@@ -932,9 +485,10 @@ export default class LeadsService {
                 return { success: false, message: 'Business unit context required' };
             }
 
+            const { closedKeys: unassignedClosedKeys } = await getStageInfo(businessUnitId);
             const filter = {
                 companyId,
-                status: 'OPEN',
+                status: { $nin: unassignedClosedKeys },
                 $or: [
                     { ownerUserId: { $exists: false } },
                     { ownerUserId: null },
@@ -945,7 +499,7 @@ export default class LeadsService {
                 filter.businessUnitId = businessUnitId;
             }
 
-            const data = await Lead.find(filter).lean();
+            const data = await Lead.find(filter).sort({ createdAt: -1 }).lean();
 
             return {
                 success: true,
@@ -954,10 +508,7 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error retrieving unassigned leads',
-            };
+            return { success: false, message: 'Error retrieving unassigned leads' };
         }
     };
 
@@ -990,18 +541,128 @@ export default class LeadsService {
             };
         } catch (error) {
             console.error('❌ Service error:', error);
+            return { success: false, message: 'Error bulk assigning leads' };
+        }
+    };
+
+    bulkImport = async (req) => {
+        try {
+            const { leads } = req.body;
+            if (!Array.isArray(leads) || leads.length === 0) {
+                return { success: false, message: 'No hay leads para importar.' };
+            }
+            const companyId = req.companyId;
+            const businessUnitId = req.businessUnitId;
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
+            }
+
+            const docs = leads.map((lead) => ({
+                companyId,
+                businessUnitId,
+                status: 'NUEVO',
+                fields: lead.fields ?? {},
+            }));
+
+            const result = await Lead.insertMany(docs, { ordered: false });
             return {
-                success: false,
-                message: 'Error bulk assigning leads',
+                success: true,
+                message: `${result.length} leads importados correctamente.`,
+                data: { count: result.length },
             };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: error?.message || 'Error al importar leads' };
+        }
+    };
+
+    logActivity = async (req) => {
+        try {
+            const { id } = req.params;
+            const { eventType, note, eventAt } = req.body || {};
+            const companyId = req.companyId;
+            const businessUnitId = req.businessUnitId;
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
+            }
+            const bu = await BusinessUnit.findById(businessUnitId).select('activityTypes').lean();
+            const allowedTypes = bu?.activityTypes?.length > 0
+                ? bu.activityTypes.map((a) => a.key)
+                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+
+            if (!eventType || !allowedTypes.includes(eventType)) {
+                return { success: false, message: 'Invalid event type' };
+            }
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const lead = await Lead.findOne(filter).lean();
+            if (!lead) return { success: false, message: 'Lead not found' };
+
+            // Legacy counter map kept for backward compat — also increment activityCounts map
+            const COUNTER_MAP = {
+                CALL:            'callCount',
+                CONTACT_SUCCESS: 'contactSuccessCount',
+                FOLLOWUP:        'followupCount',
+                WHATSAPP_SENT:   'whatsappSentCount',
+                EMAIL_SENT:      'emailSentCount',
+                QUOTE_SENT:      'quoteSentCount',
+                RESCHEDULE:      'rescheduleCount',
+            };
+            const incObj = { [`activityCounts.${eventType}`]: 1 };
+            const legacyField = COUNTER_MAP[eventType];
+            if (legacyField) incObj[legacyField] = 1;
+
+            await Promise.all([
+                LeadEvent.create({
+                    companyId: lead.companyId,
+                    businessUnitId: lead.businessUnitId,
+                    leadId: lead._id,
+                    userId: req.user?.id || req.body.userId || '',
+                    eventType,
+                    eventAt: eventAt ? new Date(eventAt) : new Date(),
+                    metadata: { note },
+                }),
+                Lead.updateOne({ _id: lead._id }, { $inc: incObj }),
+            ]);
+
+            return { success: true, message: 'Activity logged successfully', data: {} };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error logging activity' };
+        }
+    };
+
+    getEvents = async (req) => {
+        try {
+            const { id } = req.params;
+            const companyId = req.companyId;
+            const businessUnitId = req.businessUnitId;
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
+            }
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const lead = await Lead.findOne(filter, '_id').lean();
+            if (!lead) return { success: false, message: 'Lead not found' };
+
+            const data = await LeadEvent.find({ leadId: id, companyId })
+                .sort({ eventAt: -1 })
+                .limit(50)
+                .lean();
+
+            return { success: true, message: 'Events retrieved successfully', data };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error retrieving events' };
         }
     };
 
     getStats = async (req) => {
         try {
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            const role = req.user?.role;
+            const role      = req.user?.role;
+            // COMPANY_ADMIN can override via ?businessUnitId= query param
+            const businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
@@ -1011,52 +672,32 @@ export default class LeadsService {
             }
 
             const filter = { companyId };
-            if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
+            if (businessUnitId) filter.businessUnitId = businessUnitId;
 
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
-            startOfMonth.setHours(0, 0, 0, 0);
+            const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } =
+                await getStageInfo(businessUnitId);
 
-            const [open, wonThisMonth, lostThisMonth, atRisk] = await Promise.all([
-                Lead.countDocuments({ ...filter, status: 'OPEN' }),
-                Lead.countDocuments({
-                    ...filter,
-                    status: 'WON',
-                    closedAt: { $gte: startOfMonth },
-                }),
-                Lead.countDocuments({
-                    ...filter,
-                    status: 'LOST',
-                    closedAt: { $gte: startOfMonth },
-                }),
-                Lead.countDocuments({
-                    ...filter,
-                    status: 'OPEN',
-                    $or: [
-                        { isDormant: true },
-                        { stagnationLevel: { $exists: true, $ne: null } },
-                    ],
-                }),
-            ]);
+            const entries = await Promise.all(
+                statusKeys.map((s) =>
+                    Lead.countDocuments({ ...filter, status: s }).then((n) => [s, n])
+                )
+            );
+            const byStatus    = Object.fromEntries(entries);
+            const total       = entries.reduce((acc, [, n]) => acc + n, 0);
+            const wonCount    = wonKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
+            const lostCount   = lostKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
+            const invalidCount = invalidKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
+            const openCount   = statusKeys.filter((k) => !closedKeys.includes(k))
+                .reduce((acc, k) => acc + (byStatus[k] || 0), 0);
 
             return {
                 success: true,
                 message: 'Lead stats retrieved successfully',
-                data: {
-                    open,
-                    wonThisMonth,
-                    lostThisMonth,
-                    atRisk,
-                },
+                data: { total, byStatus, wonCount, lostCount, invalidCount, openCount },
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error retrieving lead stats',
-            };
+            return { success: false, message: 'Error retrieving lead stats' };
         }
     };
 }

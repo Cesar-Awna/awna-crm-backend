@@ -42,19 +42,6 @@ export default class MetricsController {
         }
     };
 
-    getFunnelMetrics = async (req, res) => {
-        try {
-            const response = await metricsService.getFunnelMetrics(req);
-            return res.status(response.success ? 200 : 400).json(response);
-        } catch (error) {
-            console.error('❌ Controller error:', error);
-            return res.status(500).json({
-                success: false,
-                message: 'Unexpected controller error',
-            });
-        }
-    };
-
     getSummaryMetrics = async (req, res) => {
         try {
             const response = await metricsService.getSummaryMetrics(req);
@@ -65,6 +52,16 @@ export default class MetricsController {
                 success: false,
                 message: 'Unexpected controller error',
             });
+        }
+    };
+
+    getActivityMetrics = async (req, res) => {
+        try {
+            const response = await metricsService.getActivityMetrics(req);
+            return res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
         }
     };
 

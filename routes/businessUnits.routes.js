@@ -17,6 +17,18 @@ router.get(
 );
 
 router.get(
+    '/:id/schema',
+    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE']),
+    businessUnitsController.getSchema
+);
+
+router.put(
+    '/:id/schema',
+    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN']),
+    businessUnitsController.updateSchema
+);
+
+router.get(
     '/:id',
     requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE']),
     businessUnitsController.getById

@@ -36,15 +36,15 @@ router.get(
 );
 
 router.get(
-    '/funnel',
-    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
-    metricsController.getFunnelMetrics
-);
-
-router.get(
     '/summary',
     requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
     metricsController.getSummaryMetrics
+);
+
+router.get(
+    '/activity',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    metricsController.getActivityMetrics
 );
 
 export default router;

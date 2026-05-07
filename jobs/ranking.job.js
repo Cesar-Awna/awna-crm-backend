@@ -2,8 +2,10 @@ import cron from 'node-cron';
 import connectMongoDB from '../libs/mongoose.js';
 import Lead from '../models/Lead.js';
 import LeadEvent from '../models/LeadEvent.js';
-import RankingEventPoint from '../models/RankingEventPoint.js';
+import BusinessUnit from '../models/BusinessUnit.js';
 import RankingPeriodScore from '../models/RankingPeriodScore.js';
+import User from '../models/User.js';
+import { buildBUStageTypeMaps, FALLBACK_CLOSED } from '../utils/stageInfo.js';
 
 let initialized = false;
 
@@ -38,13 +40,13 @@ const getMonthRange = (date) => {
     return { start, end };
 };
 
-const buildRankingEventPointMap = (rules) => {
+const buildPointMapFromBUs = (businessUnits) => {
     const map = new Map();
-    for (const rule of rules) {
-        const key = `${rule.companyId}:${String(rule.businessUnitId || '')}:${
-            rule.eventType
-        }`;
-        map.set(key, rule);
+    for (const bu of businessUnits) {
+        for (const at of (bu.activityTypes || [])) {
+            const key = `${bu.companyId}:${String(bu._id)}:${at.key}`;
+            map.set(key, { points: at.pointValue ?? 1, dailyCap: at.dailyCap ?? null });
+        }
     }
     return map;
 };
@@ -58,8 +60,11 @@ const processPeriod = async (periodType) => {
         `▶️ [ranking.job] Recalculando ranking ${periodType} (${start.toISOString()} - ${end.toISOString()})`
     );
 
-    const [eventPoints, events] = await Promise.all([
-        RankingEventPoint.find({}).lean(),
+    const executives = await User.find({ roleName: 'EXECUTIVE' }).select('_id').lean();
+    const executiveIds = new Set(executives.map((u) => String(u._id)));
+
+    const [businessUnits, events] = await Promise.all([
+        BusinessUnit.find({}).select('companyId activityTypes').lean(),
         LeadEvent.find({
             eventAt: { $gte: start, $lte: end },
         })
@@ -67,7 +72,8 @@ const processPeriod = async (periodType) => {
             .lean(),
     ]);
 
-    const pointMap = buildRankingEventPointMap(eventPoints);
+    const pointMap = buildPointMapFromBUs(businessUnits);
+    const { stageTypeMap, closedStatusSet } = buildBUStageTypeMaps(businessUnits);
 
     const keyForUser = (companyId, businessUnitId, userId) =>
         `${companyId}:${String(businessUnitId || '')}:${userId}`;
@@ -83,10 +89,8 @@ const processPeriod = async (periodType) => {
                 activityScore: 0,
                 closedWon: 0,
                 closedLost: 0,
-                closedAmount: 0,
                 openLeadsCount: 0,
                 openLeadsAgeSum: 0,
-                dormantCount: 0,
                 advancedIn7Days: 0,
             });
         }
@@ -101,6 +105,7 @@ const processPeriod = async (periodType) => {
         const businessUnitId = ev.businessUnitId;
         const userId = ev.userId;
         if (!companyId || !businessUnitId || !userId) continue;
+        if (!executiveIds.has(String(userId))) continue;
 
         const ruleKey = `${companyId}:${String(businessUnitId || '')}:${ev.eventType}`;
         const rule = pointMap.get(ruleKey);
@@ -125,10 +130,10 @@ const processPeriod = async (periodType) => {
 
     // Result score basado en leads cerrados
     const closedLeads = await Lead.find({
-        status: { $in: ['WON', 'LOST'] },
-        closedAt: { $gte: start, $lte: end },
+        status: { $in: [...closedStatusSet] },
+        updatedAt: { $gte: start, $lte: end },
     })
-        .select('companyId businessUnitId ownerUserId status closedAmount')
+        .select('companyId businessUnitId ownerUserId status')
         .lean();
 
     for (const lead of closedLeads) {
@@ -136,19 +141,22 @@ const processPeriod = async (periodType) => {
         const businessUnitId = lead.businessUnitId;
         const userId = lead.ownerUserId;
         if (!companyId || !businessUnitId || !userId) continue;
+        if (!executiveIds.has(String(userId))) continue;
         const agg = ensureAgg(companyId, businessUnitId, userId);
-        if (lead.status === 'WON') agg.closedWon += 1;
-        if (lead.status === 'LOST') agg.closedLost += 1;
-        if (lead.closedAmount) agg.closedAmount += lead.closedAmount;
+
+        const mapKey   = `${companyId}:${String(businessUnitId)}:${lead.status}`;
+        const stageType = stageTypeMap.get(mapKey);
+        const isWon  = stageType ? stageType === 'won'  : lead.status === 'CERRADO_GANADO';
+        const isLost = stageType ? stageType === 'lost' : lead.status === 'CERRADO_PERDIDO';
+        if (isWon)  agg.closedWon  += 1;
+        if (isLost) agg.closedLost += 1;
     }
 
     // Progress score basado en leads abiertos
     const openLeads = await Lead.find({
-        status: 'OPEN',
+        status: { $nin: [...closedStatusSet] },
     })
-        .select(
-            'companyId businessUnitId ownerUserId createdAt isDormant lastStageChangedAt'
-        )
+        .select('companyId businessUnitId ownerUserId createdAt updatedAt')
         .lean();
 
     const nowDay = new Date();
@@ -159,6 +167,7 @@ const processPeriod = async (periodType) => {
         const businessUnitId = lead.businessUnitId;
         const userId = lead.ownerUserId;
         if (!companyId || !businessUnitId || !userId) continue;
+        if (!executiveIds.has(String(userId))) continue;
 
         const agg = ensureAgg(companyId, businessUnitId, userId);
         agg.openLeadsCount += 1;
@@ -168,13 +177,9 @@ const processPeriod = async (periodType) => {
             agg.openLeadsAgeSum += ageDays;
         }
 
-        if (lead.isDormant) {
-            agg.dormantCount += 1;
-        }
-
         if (
-            lead.lastStageChangedAt &&
-            new Date(lead.lastStageChangedAt).getTime() >= sevenDaysAgo.getTime()
+            lead.updatedAt &&
+            new Date(lead.updatedAt).getTime() >= sevenDaysAgo.getTime()
         ) {
             agg.advancedIn7Days += 1;
         }
@@ -187,28 +192,23 @@ const processPeriod = async (periodType) => {
 
         const avgAge =
             agg.openLeadsCount > 0 ? agg.openLeadsAgeSum / agg.openLeadsCount : 0;
-        const pctDormant =
-            agg.openLeadsCount > 0 ? agg.dormantCount / agg.openLeadsCount : 0;
         const pctAdvanced =
             agg.openLeadsCount > 0 ? agg.advancedIn7Days / agg.openLeadsCount : 0;
 
         const activityScore = agg.activityScore;
-        const resultScore =
-            Math.round(closeRate * 100) + agg.closedWon * 5 + agg.closedAmount / 1000;
+        const resultScore = Math.round(closeRate * 100) + agg.closedWon * 5;
         const progressScore = Math.max(
             0,
-            Math.round(pctAdvanced * 100 - pctDormant * 100 - avgAge / 5)
+            Math.round(pctAdvanced * 100 - avgAge / 5)
         );
         const totalScore = activityScore + resultScore + progressScore;
 
         const kpisSnapshot = {
             closedWon: agg.closedWon,
             closedLost: agg.closedLost,
-            closedAmount: agg.closedAmount,
             closeRate,
             openLeadsCount: agg.openLeadsCount,
             avgAge,
-            pctDormant,
             pctAdvanced,
             activityScore,
             resultScore,

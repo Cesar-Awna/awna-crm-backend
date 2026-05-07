@@ -106,6 +106,73 @@ export default class BusinessUnitsService {
         }
     };
 
+    getSchema = async (req) => {
+        try {
+            const { id } = req.params;
+            let companyId = req.companyId;
+            if (req.user?.role === 'SUPER_ADMIN') {
+                companyId = req.query.companyId || null;
+            }
+            if (!companyId) return { success: false, message: 'Company context required' };
+
+            const bu = await BusinessUnit.findOne(
+                { _id: id, companyId },
+                'leadSchema activityTypes pipelineStages'
+            ).lean();
+            if (!bu) return { success: false, message: 'Business unit not found' };
+
+            return {
+                success: true,
+                message: 'Schema retrieved successfully',
+                data: {
+                    leadSchema:     bu.leadSchema     || [],
+                    activityTypes:  bu.activityTypes  || [],
+                    pipelineStages: bu.pipelineStages || [],
+                },
+            };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error retrieving schema' };
+        }
+    };
+
+    updateSchema = async (req) => {
+        try {
+            const { id } = req.params;
+            let companyId = req.companyId;
+            if (req.user?.role === 'SUPER_ADMIN') {
+                companyId = req.query.companyId || null;
+            }
+            if (!companyId) return { success: false, message: 'Company context required' };
+
+            const { leadSchema, activityTypes, pipelineStages } = req.body;
+            const patch = {};
+            if (leadSchema     !== undefined) patch.leadSchema     = leadSchema;
+            if (activityTypes  !== undefined) patch.activityTypes  = activityTypes;
+            if (pipelineStages !== undefined) patch.pipelineStages = pipelineStages;
+
+            const data = await BusinessUnit.findOneAndUpdate(
+                { _id: id, companyId },
+                { $set: patch },
+                { new: true, lean: true }
+            );
+            if (!data) return { success: false, message: 'Business unit not found' };
+
+            return {
+                success: true,
+                message: 'Schema updated successfully',
+                data: {
+                    leadSchema:     data.leadSchema     || [],
+                    activityTypes:  data.activityTypes  || [],
+                    pipelineStages: data.pipelineStages || [],
+                },
+            };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error updating schema' };
+        }
+    };
+
     delete = async (req) => {
         try {
             const { id } = req.params;

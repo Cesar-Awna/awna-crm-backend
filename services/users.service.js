@@ -1,5 +1,6 @@
 import connectMongoDB from '../libs/mongoose.js';
 import User from '../models/User.js';
+import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 
 export default class UsersService {
     constructor() {
@@ -13,21 +14,26 @@ export default class UsersService {
                 companyId = req.query.companyId || null;
             }
             if (!companyId) {
-                return { success: false, message: 'Company context required' };
+                return formatPaginationError('Company context required');
             }
+
+            const { page, limit, sort } = parsePaginationParams(req);
             const filter = { companyId };
-            const data = await User.find(filter).lean();
+
+            const result = await User.paginate(filter, {
+                page,
+                limit,
+                sort,
+                lean: true,
+            });
+
             return {
-                success: true,
+                ...formatPaginatedResponse(result),
                 message: 'Users retrieved successfully',
-                data,
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Error retrieving users',
-            };
+            return formatPaginationError('Error retrieving users');
         }
     };
 
@@ -227,16 +233,21 @@ export default class UsersService {
             if (req.user?.role === 'SUPER_ADMIN') {
                 companyId = req.query.companyId || null;
             }
-            if (!companyId) return { success: false, message: 'Company context required' };
-            const data = await User.find({ companyId, roleName: 'EXECUTIVE' }).lean();
+            if (!companyId) return formatPaginationError('Company context required');
+
+            const { page, limit, sort } = parsePaginationParams(req);
+            const result = await User.paginate(
+                { companyId, roleName: 'EXECUTIVE' },
+                { page, limit, sort, lean: true }
+            );
+
             return {
-                success: true,
+                ...formatPaginatedResponse(result),
                 message: 'Executives retrieved successfully',
-                data,
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return { success: false, message: 'Error retrieving executives' };
+            return formatPaginationError('Error retrieving executives');
         }
     };
 
@@ -246,16 +257,64 @@ export default class UsersService {
             if (req.user?.role === 'SUPER_ADMIN') {
                 companyId = req.query.companyId || null;
             }
-            if (!companyId) return { success: false, message: 'Company context required' };
-            const data = await User.find({ companyId, roleName: 'SUPERVISOR' }).lean();
+            if (!companyId) return formatPaginationError('Company context required');
+
+            const { page, limit, sort } = parsePaginationParams(req);
+            const result = await User.paginate(
+                { companyId, roleName: 'SUPERVISOR' },
+                { page, limit, sort, lean: true }
+            );
+
             return {
-                success: true,
+                ...formatPaginatedResponse(result),
                 message: 'Supervisors retrieved successfully',
-                data,
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return { success: false, message: 'Error retrieving supervisors' };
+            return formatPaginationError('Error retrieving supervisors');
+        }
+    };
+
+    changePassword = async (req) => {
+        try {
+            const userId = req.user?._id;
+            const { currentPassword, newPassword } = req.body || {};
+
+            if (!userId) {
+                return { success: false, message: 'User context required' };
+            }
+
+            if (!currentPassword || !newPassword) {
+                return { success: false, message: 'Current and new password are required' };
+            }
+
+            if (newPassword.length < 6) {
+                return { success: false, message: 'New password must be at least 6 characters' };
+            }
+
+            const user = await User.findById(userId).lean();
+            if (!user) {
+                return { success: false, message: 'User not found' };
+            }
+
+            if (user.passwordHash !== currentPassword) {
+                return { success: false, message: 'Current password is incorrect' };
+            }
+
+            const updated = await User.findByIdAndUpdate(
+                userId,
+                { passwordHash: newPassword },
+                { new: true, lean: true }
+            );
+
+            return {
+                success: true,
+                message: 'Password changed successfully',
+                data: { _id: updated._id, email: updated.email },
+            };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error changing password' };
         }
     };
 }

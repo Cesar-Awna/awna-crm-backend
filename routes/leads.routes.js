@@ -4,14 +4,21 @@ import authMiddleware from '../middlewares/auth.middleware.js';
 import requireRole from '../middlewares/requireRole.middleware.js';
 import requireCompanyMiddleware from '../middlewares/requireCompany.middleware.js';
 import requireBusinessUnitMiddleware from '../middlewares/requireBusinessUnit.middleware.js';
+import validate from '../middlewares/validate.middleware.js';
+import {
+  createLeadSchema,
+  changeStatusSchema,
+  assignLeadSchema,
+  registerContactSchema,
+  addNoteSchema,
+  logActivitySchema,
+} from '../validators/leads.validator.js';
 
 const router = express.Router();
 const leadsController = new LeadsController();
 
-// All lead routes require auth + company + business unit context
 router.use(authMiddleware, requireCompanyMiddleware, requireBusinessUnitMiddleware);
 
-// CRUD base (no DELETE)
 router.get(
     '/',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
@@ -22,18 +29,6 @@ router.get(
     '/search',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
     leadsController.search
-);
-
-router.get(
-    '/company/:rut',
-    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.getByCompanyRut
-);
-
-router.get(
-    '/company-name/:name',
-    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.getByCompanyName
 );
 
 router.get(
@@ -49,33 +44,21 @@ router.get(
 );
 
 router.get(
-    '/dormant',
-    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.getDormant
-);
-
-router.get(
-    '/stagnant',
-    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.getStagnant
-);
-
-router.get(
     '/stats',
     requireRole(['COMPANY_ADMIN', 'SUPERVISOR']),
     leadsController.getStats
 );
 
 router.get(
-    '/workload',
-    requireRole(['COMPANY_ADMIN', 'SUPERVISOR']),
-    leadsController.getWorkloadByExecutive
-);
-
-router.get(
     '/unassigned',
     requireRole(['COMPANY_ADMIN', 'SUPERVISOR']),
     leadsController.getUnassigned
+);
+
+router.post(
+    '/bulk-import',
+    requireRole(['COMPANY_ADMIN', 'SUPERVISOR']),
+    leadsController.bulkImport
 );
 
 router.post(
@@ -93,6 +76,7 @@ router.get(
 router.post(
     '/',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    validate(createLeadSchema),
     leadsController.create
 );
 
@@ -102,53 +86,45 @@ router.put(
     leadsController.update
 );
 
-// Acciones de negocio
 router.post(
-    '/:id/change-stage',
+    '/:id/change-status',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.changeStage
+    validate(changeStatusSchema),
+    leadsController.changeStatus
 );
 
 router.post(
     '/:id/register-contact',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    validate(registerContactSchema),
     leadsController.registerContact
-);
-
-router.post(
-    '/:id/schedule-meeting',
-    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.scheduleMeeting
-);
-
-router.post(
-    '/:id/set-next-action',
-    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.setNextAction
 );
 
 router.post(
     '/:id/assign',
     requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
+    validate(assignLeadSchema),
     leadsController.assignLead
 );
 
 router.post(
     '/:id/add-note',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    validate(addNoteSchema),
     leadsController.addNote
 );
 
-router.patch(
-    '/:id/mark-won',
-    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.markWon
+router.post(
+    '/:id/log-activity',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    validate(logActivitySchema),
+    leadsController.logActivity
 );
 
-router.patch(
-    '/:id/mark-lost',
-    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.markLost
+router.get(
+    '/:id/events',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.getEvents
 );
 
 export default router;
