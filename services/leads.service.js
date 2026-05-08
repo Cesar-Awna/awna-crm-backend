@@ -663,6 +663,7 @@ export default class LeadsService {
             const role      = req.user?.role;
             // COMPANY_ADMIN can override via ?businessUnitId= query param
             const businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
+            const ownerUserId = req.query?.ownerUserId || null;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
@@ -673,6 +674,7 @@ export default class LeadsService {
 
             const filter = { companyId };
             if (businessUnitId) filter.businessUnitId = businessUnitId;
+            if (ownerUserId) filter.ownerUserId = ownerUserId;
 
             const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } =
                 await getStageInfo(businessUnitId);
