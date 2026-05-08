@@ -37,7 +37,7 @@ export const requireBusinessUnitMiddleware = (req, res, next) => {
         }
 
         const hasAccess =
-            userBusinessUnitIds.length === 0 ||
+            userBusinessUnitIds.length > 0 &&
             userBusinessUnitIds.some(
                 (id) => String(id) === String(businessUnitId)
             );
