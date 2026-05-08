@@ -38,6 +38,7 @@ export const authMiddleware = (req, res, next) => {
             role: decoded.role || decoded.roleName,
             businessUnitIds: decoded.businessUnitIds || [],
             teamId: decoded.teamId || null,
+            supervisorId: decoded.supervisorId || null,
         };
 
         next();

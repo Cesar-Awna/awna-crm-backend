@@ -35,6 +35,7 @@ export default class AuthService {
                 roleName: user.roleName || null,
                 businessUnitIds: user.businessUnitIds || [],
                 teamId: user.teamId || null,
+                supervisorId: user.supervisorId || null,
             };
 
             if (!JWT_SECRET) {
@@ -52,6 +53,7 @@ export default class AuthService {
                     role: session.roleName,
                     businessUnitIds: session.businessUnitIds,
                     teamId: session.teamId,
+                    supervisorId: session.supervisorId,
                 },
                 JWT_SECRET,
                 { expiresIn: '1d' }
