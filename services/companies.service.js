@@ -27,12 +27,12 @@ export default class CompaniesService {
                 lean: true,
             });
 
-            const ids = result.docs.map((c) => c._id);
+            const ids = result.docs.map((c) => String(c._id));
             const counts = await User.aggregate([
                 { $match: { companyId: { $in: ids } } },
                 { $group: { _id: '$companyId', count: { $sum: 1 } } },
             ]);
-            const countMap = new Map(counts.map((c) => [String(c._id), c.count]));
+            const countMap = new Map(counts.map((c) => [c._id, c.count]));
 
             const data = result.docs.map((c) => ({
                 ...c,
