@@ -1,6 +1,7 @@
 import connectMongoDB from '../libs/mongoose.js';
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 
 const { JWT_SECRET } = process.env;
 
@@ -22,7 +23,15 @@ export default class AuthService {
 
             const user = await User.findOne({ email }).lean();
 
-            if (!user || !user.passwordHash || user.passwordHash !== password) {
+            if (!user || !user.passwordHash) {
+                return {
+                    success: false,
+                    message: 'Invalid credentials',
+                };
+            }
+
+            const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+            if (!passwordMatch) {
                 return {
                     success: false,
                     message: 'Invalid credentials',
