@@ -134,14 +134,22 @@ export default class MetricsService {
 
     getSupervisorMetrics = async (req) => {
         try {
-            const companyId      = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            const role           = req.user?.role;
+            const companyId = req.companyId;
+            const role      = req.user?.role;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
             }
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
+
+            // SUPERVISOR can only see metrics from their assigned business unit
+            let businessUnitId = req.businessUnitId;
+            if (role === 'SUPERVISOR') {
+                const supervisorBuId = req.user.businessUnitIds?.[0];
+                if (!supervisorBuId) {
+                    return { success: false, message: 'Supervisor sin unidad de negocio asignada' };
+                }
+                businessUnitId = supervisorBuId;
+            } else if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
                 return { success: false, message: 'Business unit context required' };
             }
 
@@ -169,14 +177,22 @@ export default class MetricsService {
 
     getConversionMetrics = async (req) => {
         try {
-            const companyId      = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            const role           = req.user?.role;
+            const companyId = req.companyId;
+            const role      = req.user?.role;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
             }
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
+
+            // SUPERVISOR can only see metrics from their assigned business unit
+            let businessUnitId = req.businessUnitId;
+            if (role === 'SUPERVISOR') {
+                const supervisorBuId = req.user.businessUnitIds?.[0];
+                if (!supervisorBuId) {
+                    return { success: false, message: 'Supervisor sin unidad de negocio asignada' };
+                }
+                businessUnitId = supervisorBuId;
+            } else if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
                 return { success: false, message: 'Business unit context required' };
             }
 
@@ -211,9 +227,16 @@ export default class MetricsService {
             if (!companyId) return { success: false, message: 'Company context required' };
 
             const { period = 'today', userId } = req.query;
-            const businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
+            let businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
 
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
+            // SUPERVISOR can only see activity from their assigned business unit
+            if (role === 'SUPERVISOR') {
+                const supervisorBuId = req.user.businessUnitIds?.[0];
+                if (!supervisorBuId) {
+                    return { success: false, message: 'Supervisor sin unidad de negocio asignada' };
+                }
+                businessUnitId = supervisorBuId;
+            } else if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
                 return { success: false, message: 'Business unit context required' };
             }
 
@@ -274,14 +297,22 @@ export default class MetricsService {
 
     getSummaryMetrics = async (req) => {
         try {
-            const companyId      = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            const role           = req.user?.role;
+            const companyId = req.companyId;
+            const role      = req.user?.role;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
             }
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
+
+            // SUPERVISOR can only see metrics from their assigned business unit
+            let businessUnitId = req.businessUnitId;
+            if (role === 'SUPERVISOR') {
+                const supervisorBuId = req.user.businessUnitIds?.[0];
+                if (!supervisorBuId) {
+                    return { success: false, message: 'Supervisor sin unidad de negocio asignada' };
+                }
+                businessUnitId = supervisorBuId;
+            } else if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
                 return { success: false, message: 'Business unit context required' };
             }
 
