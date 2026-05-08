@@ -76,6 +76,12 @@ router.patch(
 );
 
 router.patch(
+    '/:id/assign-supervisor',
+    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN']),
+    usersController.assignSupervisor
+);
+
+router.patch(
     '/me/change-password',
     requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE']),
     validate(changePasswordSchema),

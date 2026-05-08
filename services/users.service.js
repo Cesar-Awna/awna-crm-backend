@@ -71,6 +71,32 @@ export default class UsersService {
             }
             if (!companyId) return { success: false, message: 'Company context required' };
             const payload = { ...req.body, companyId };
+
+            // Validate role-based constraints on businessUnitIds
+            const roleName = payload.roleName || 'EXECUTIVE';
+            const businessUnitIds = payload.businessUnitIds || [];
+
+            if (roleName === 'SUPERVISOR' && businessUnitIds.length > 1) {
+                return { success: false, message: 'Un supervisor solo puede tener 1 unidad de negocio' };
+            }
+
+            if (roleName === 'EXECUTIVE') {
+                if (businessUnitIds.length > 1) {
+                    return { success: false, message: 'Un ejecutivo solo puede pertenecer a 1 unidad de negocio' };
+                }
+
+                if (payload.supervisorId) {
+                    const supervisor = await User.findOne({
+                        _id: payload.supervisorId,
+                        companyId,
+                        roleName: 'SUPERVISOR',
+                    }).lean();
+                    if (!supervisor) {
+                        return { success: false, message: 'El supervisor debe ser un usuario válido con rol SUPERVISOR' };
+                    }
+                }
+            }
+
             if (payload.password && !payload.passwordHash) {
                 payload.passwordHash = payload.password;
                 delete payload.password;
@@ -184,16 +210,30 @@ export default class UsersService {
                 companyId = req.body.companyId || req.query.companyId || null;
             }
             if (!companyId) return { success: false, message: 'Company context required' };
-            const user = await User.findOneAndUpdate(
+
+            const buIds = Array.isArray(businessUnitIds) ? businessUnitIds : [];
+            const user = await User.findOne({ _id: id, companyId }).lean();
+            if (!user) return { success: false, message: 'User not found' };
+
+            // Validate cardinalité based on role
+            if (user.roleName === 'SUPERVISOR' && buIds.length > 1) {
+                return { success: false, message: 'Un supervisor solo puede tener 1 unidad de negocio' };
+            }
+
+            if (user.roleName === 'EXECUTIVE' && buIds.length > 1) {
+                return { success: false, message: 'Un ejecutivo solo puede pertenecer a 1 unidad de negocio' };
+            }
+
+            const updated = await User.findOneAndUpdate(
                 { _id: id, companyId },
-                { businessUnitIds: Array.isArray(businessUnitIds) ? businessUnitIds : [] },
+                { businessUnitIds: buIds },
                 { new: true, lean: true }
             );
-            if (!user) return { success: false, message: 'User not found' };
+
             return {
                 success: true,
                 message: 'Business units assigned successfully',
-                data: user,
+                data: updated,
             };
         } catch (error) {
             console.error('❌ Service error:', error);
@@ -227,6 +267,51 @@ export default class UsersService {
         }
     };
 
+    assignSupervisor = async (req) => {
+        try {
+            const { id } = req.params;
+            const { supervisorId } = req.body || {};
+            let companyId = req.companyId;
+            if (req.user?.role === 'SUPER_ADMIN') {
+                companyId = req.body.companyId || req.query.companyId || null;
+            }
+            if (!companyId) return { success: false, message: 'Company context required' };
+
+            const user = await User.findOne({ _id: id, companyId }).lean();
+            if (!user) return { success: false, message: 'User not found' };
+
+            if (user.roleName !== 'EXECUTIVE') {
+                return { success: false, message: 'Solo ejecutivos pueden ser asignados a un supervisor' };
+            }
+
+            if (supervisorId) {
+                const supervisor = await User.findOne({
+                    _id: supervisorId,
+                    companyId,
+                    roleName: 'SUPERVISOR',
+                }).lean();
+                if (!supervisor) {
+                    return { success: false, message: 'El supervisor debe ser un usuario válido con rol SUPERVISOR' };
+                }
+            }
+
+            const updated = await User.findOneAndUpdate(
+                { _id: id, companyId },
+                { supervisorId: supervisorId || null },
+                { new: true, lean: true }
+            );
+
+            return {
+                success: true,
+                message: 'Supervisor assigned successfully',
+                data: updated,
+            };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error assigning supervisor' };
+        }
+    };
+
     getExecutives = async (req) => {
         try {
             let companyId = req.companyId;
@@ -236,8 +321,15 @@ export default class UsersService {
             if (!companyId) return formatPaginationError('Company context required');
 
             const { page, limit, sort } = parsePaginationParams(req);
+            const filter = { companyId, roleName: 'EXECUTIVE' };
+
+            // If requester is SUPERVISOR, show only their executives
+            if (req.user?.role === 'SUPERVISOR') {
+                filter.supervisorId = String(req.user.id || req.user._id);
+            }
+
             const result = await User.paginate(
-                { companyId, roleName: 'EXECUTIVE' },
+                filter,
                 { page, limit, sort, lean: true }
             );
 

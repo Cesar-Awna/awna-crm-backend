@@ -107,6 +107,19 @@ export default class UsersController {
         }
     };
 
+    assignSupervisor = async (req, res) => {
+        try {
+            const response = await usersService.assignSupervisor(req);
+            return res.status(response.success ? 200 : 404).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Unexpected controller error',
+            });
+        }
+    };
+
     getExecutives = async (req, res) => {
         try {
             const response = await usersService.getExecutives(req);
