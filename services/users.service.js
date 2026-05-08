@@ -323,9 +323,12 @@ export default class UsersService {
             const { page, limit, sort } = parsePaginationParams(req);
             const filter = { companyId, roleName: 'EXECUTIVE' };
 
-            // If requester is SUPERVISOR, show only their executives
+            // If requester is SUPERVISOR, show executives assigned to them or in their BUs
             if (req.user?.role === 'SUPERVISOR') {
-                filter.supervisorId = String(req.user.id || req.user._id);
+                filter.$or = [
+                    { supervisorId: String(req.user.id || req.user._id) },
+                    { businessUnitIds: { $in: req.user.businessUnitIds } }
+                ];
             }
 
             const result = await User.paginate(
