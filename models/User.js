@@ -44,6 +44,11 @@ const userSchema = new Schema(
             type: String,
             default: undefined,
         },
+        supervisorId: {
+            type: String,
+            default: null,
+            index: true,
+        },
         roleName: {
             type: String,
             enum: ['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE'],
@@ -57,6 +62,7 @@ const userSchema = new Schema(
 
 userSchema.index({ companyId: 1, email: 1 }, { unique: true });
 userSchema.index({ companyId: 1, roleName: 1 });
+userSchema.index({ companyId: 1, supervisorId: 1, roleName: 1 });
 userSchema.plugin(paginate);
 
 const User = mongoose.model('User', userSchema);

@@ -23,6 +23,7 @@ export const createUserSchema = Joi.object({
     }),
   businessUnitIds: Joi.array().items(Joi.string()).optional(),
   phone: Joi.string().optional(),
+  supervisorId: Joi.string().allow(null).optional(),
 }).unknown(false);
 
 export const updateUserSchema = Joi.object({
@@ -41,4 +42,5 @@ export const updateUserSchema = Joi.object({
   businessUnitIds: Joi.array().items(Joi.string()).optional(),
   phone: Joi.string().optional(),
   isActive: Joi.boolean().optional(),
+  supervisorId: Joi.string().allow(null).optional(),
 }).unknown(false);
