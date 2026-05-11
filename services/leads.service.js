@@ -557,18 +557,55 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
 
-            const docs = leads.map((lead) => ({
-                companyId,
-                businessUnitId,
-                status: 'NUEVO',
-                fields: lead.fields ?? {},
-            }));
+            // Collect all unique executive emails to fetch them once
+            const executiveEmails = [...new Set(leads.map((l) => l.executiveEmail).filter(Boolean))];
+            const executiveMap = {};
+
+            if (executiveEmails.length > 0) {
+                const executives = await User.find(
+                    { email: { $in: executiveEmails }, companyId, roleName: 'EXECUTIVE' },
+                    '_id email'
+                ).lean();
+                executives.forEach((exec) => {
+                    executiveMap[exec.email] = String(exec._id);
+                });
+            }
+
+            const docs = [];
+            const errors = [];
+
+            for (let i = 0; i < leads.length; i++) {
+                const lead = leads[i];
+                const ownerUserId = lead.executiveEmail ? executiveMap[lead.executiveEmail] : null;
+
+                if (lead.executiveEmail && !ownerUserId) {
+                    errors.push({ row: i + 1, error: `Ejecutivo ${lead.executiveEmail} no encontrado` });
+                    continue;
+                }
+
+                const doc = {
+                    companyId,
+                    businessUnitId,
+                    status: 'NUEVO',
+                    fields: lead.fields ?? {},
+                };
+
+                if (ownerUserId) {
+                    doc.ownerUserId = ownerUserId;
+                }
+
+                docs.push(doc);
+            }
+
+            if (docs.length === 0) {
+                return { success: false, message: 'No hay leads válidos para importar.', data: { errors } };
+            }
 
             const result = await Lead.insertMany(docs, { ordered: false });
             return {
                 success: true,
                 message: `${result.length} leads importados correctamente.`,
-                data: { count: result.length },
+                data: { count: result.length, created: result.length, errors: errors.length > 0 ? errors : undefined },
             };
         } catch (error) {
             console.error('❌ Service error:', error);
