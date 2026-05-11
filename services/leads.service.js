@@ -557,50 +557,85 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
 
-            // Map field names: normalize different Excel column name variations
-            const normalizedLeads = leads.map((lead) => {
-                const normalized = {
-                    razonSocial: lead.razonSocial || lead['Razón Social'] || '',
-                    rutEmpresa: lead.rutEmpresa || lead['Rut Empresa'] || lead['RUT Empresa'] || '',
-                    nombreContacto: lead.nombreContacto || lead['Nombre del Contacto'] ||
-                                   (lead.Nombre && lead.Apellido ? `${lead.Nombre} ${lead.Apellido}`.trim() : ''),
-                    correo: lead.correo || lead.Correo || '',
-                    telefono: lead.telefono || lead.Telefono || '',
-                    executiveEmail: lead.executiveEmail || lead['executiveEmail'] || '',
-                    fields: lead.fields || {},
+            // Validate and normalize leads from Excel format: Nombre, Apellido, Rut Empresa, Telefono, Correo, Razón Social
+            const normalizedLeads = leads.map((lead, idx) => {
+                const nombre = (lead.Nombre || '').trim();
+                const apellido = (lead.Apellido || '').trim();
+                const rutEmpresa = (lead['Rut Empresa'] || '').trim();
+                const telefono = (lead.Telefono || '').trim();
+                const correo = (lead.Correo || '').trim();
+                const razonSocial = (lead['Razón Social'] || '').trim();
+
+                // Validate required fields
+                if (!nombre || !apellido || !rutEmpresa || !telefono || !correo || !razonSocial) {
+                    return {
+                        valid: false,
+                        row: idx + 1,
+                        error: 'Faltan campos requeridos (Nombre, Apellido, Rut Empresa, Telefono, Correo, Razón Social)'
+                    };
+                }
+
+                return {
+                    valid: true,
+                    razonSocial,
+                    rutEmpresa,
+                    nombreContacto: `${nombre} ${apellido}`,
+                    correo,
+                    telefono,
                 };
-                return normalized;
             });
 
-            // Collect all unique executive emails to fetch them once
-            const executiveEmails = [...new Set(normalizedLeads.map((l) => l.executiveEmail).filter(Boolean))];
-            const executiveMap = {};
+            // Separate valid and invalid leads
+            const validLeads = normalizedLeads.filter((l) => l.valid);
+            const invalidLeads = normalizedLeads.filter((l) => !l.valid);
+            const errors = invalidLeads.map((l) => ({ row: l.row, error: l.error }));
 
-            if (executiveEmails.length > 0) {
-                const executives = await User.find(
-                    { email: { $in: executiveEmails }, companyId, roleName: 'EXECUTIVE' },
-                    '_id email'
-                ).lean();
-                executives.forEach((exec) => {
-                    executiveMap[exec.email] = String(exec._id);
-                });
+            if (validLeads.length === 0) {
+                return { success: false, message: 'No hay leads válidos para importar.', data: { errors } };
             }
 
+            // Get all executives assigned to this supervisor (or all executives for admin)
+            let executiveFilter = { companyId, roleName: 'EXECUTIVE', businessUnitIds: { $in: [businessUnitId] } };
+            if (req.user?.role === 'SUPERVISOR') {
+                executiveFilter.supervisorId = String(req.user.id || req.user._id);
+            }
+
+            const executives = await User.find(executiveFilter, '_id fullName').lean();
+            if (executives.length === 0) {
+                return { success: false, message: 'No hay ejecutivos disponibles para asignar leads.' };
+            }
+
+            // Get current lead counts per executive to balance distribution
+            const leadCountsByExec = {};
+            for (const exec of executives) {
+                const count = await Lead.countDocuments({
+                    companyId,
+                    businessUnitId,
+                    ownerUserId: exec._id
+                });
+                leadCountsByExec[exec._id] = { count, exec };
+            }
+
+            // Distribute leads equitably: assign to executive with fewest leads
             const docs = [];
-            const errors = [];
+            for (let i = 0; i < validLeads.length; i++) {
+                const lead = validLeads[i];
 
-            for (let i = 0; i < normalizedLeads.length; i++) {
-                const lead = normalizedLeads[i];
-                const ownerUserId = lead.executiveEmail ? executiveMap[lead.executiveEmail] : null;
+                // Find executive with minimum leads
+                let minExecId = executives[0]._id;
+                let minCount = leadCountsByExec[minExecId].count;
 
-                if (lead.executiveEmail && !ownerUserId) {
-                    errors.push({ row: i + 1, error: `Ejecutivo ${lead.executiveEmail} no encontrado` });
-                    continue;
+                for (const exec of executives) {
+                    if (leadCountsByExec[exec._id].count < minCount) {
+                        minExecId = exec._id;
+                        minCount = leadCountsByExec[exec._id].count;
+                    }
                 }
 
                 const doc = {
                     companyId,
                     businessUnitId,
+                    ownerUserId: minExecId,
                     status: 'NUEVO',
                     fields: {
                         razonSocial: lead.razonSocial,
@@ -608,15 +643,11 @@ export default class LeadsService {
                         nombreContacto: lead.nombreContacto,
                         correo: lead.correo,
                         telefono: lead.telefono,
-                        ...lead.fields,
                     },
                 };
 
-                if (ownerUserId) {
-                    doc.ownerUserId = ownerUserId;
-                }
-
                 docs.push(doc);
+                leadCountsByExec[minExecId].count += 1;
             }
 
             if (docs.length === 0) {
