@@ -1,5 +1,6 @@
 import connectMongoDB from '../libs/mongoose.js';
 import User from '../models/User.js';
+import bcrypt from 'bcryptjs';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 
 export default class UsersService {
@@ -98,7 +99,7 @@ export default class UsersService {
             }
 
             if (payload.password && !payload.passwordHash) {
-                payload.passwordHash = payload.password;
+                payload.passwordHash = await bcrypt.hash(payload.password, 10);
                 delete payload.password;
             }
             const data = await User.create(payload);
@@ -134,7 +135,7 @@ export default class UsersService {
             payload.businessUnitIds = supervisorBUIds;
 
             if (payload.password && !payload.passwordHash) {
-                payload.passwordHash = payload.password;
+                payload.passwordHash = await bcrypt.hash(payload.password, 10);
                 delete payload.password;
             }
 
@@ -429,13 +430,15 @@ export default class UsersService {
                 return { success: false, message: 'User not found' };
             }
 
-            if (user.passwordHash !== currentPassword) {
+            const passwordMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+            if (!passwordMatch) {
                 return { success: false, message: 'Current password is incorrect' };
             }
 
+            const hashedNewPassword = await bcrypt.hash(newPassword, 10);
             const updated = await User.findByIdAndUpdate(
                 userId,
-                { passwordHash: newPassword },
+                { passwordHash: hashedNewPassword },
                 { new: true, lean: true }
             );
 
