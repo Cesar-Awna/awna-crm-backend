@@ -38,6 +38,13 @@ router.get(
 );
 
 router.post(
+    '/create-executive',
+    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR']),
+    validate(createUserSchema),
+    usersController.createExecutive
+);
+
+router.post(
     '/',
     requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN']),
     validate(createUserSchema),

@@ -116,6 +116,43 @@ export default class UsersService {
         }
     };
 
+    createExecutive = async (req) => {
+        try {
+            const companyId = req.companyId;
+            if (!companyId) return { success: false, message: 'Company context required' };
+
+            const supervisorId = String(req.user?.id || req.user?._id);
+            const supervisorBUIds = req.user?.businessUnitIds || [];
+
+            if (!supervisorId || supervisorBUIds.length === 0) {
+                return { success: false, message: 'Supervisor context required' };
+            }
+
+            const payload = { ...req.body, companyId };
+            payload.roleName = 'EXECUTIVE';
+            payload.supervisorId = supervisorId;
+            payload.businessUnitIds = supervisorBUIds;
+
+            if (payload.password && !payload.passwordHash) {
+                payload.passwordHash = payload.password;
+                delete payload.password;
+            }
+
+            const data = await User.create(payload);
+            return {
+                success: true,
+                message: 'Executive created successfully',
+                data,
+            };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return {
+                success: false,
+                message: 'Error creating executive',
+            };
+        }
+    };
+
     update = async (req) => {
         try {
             const { id } = req.params;

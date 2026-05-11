@@ -42,6 +42,19 @@ export default class UsersController {
         }
     };
 
+    createExecutive = async (req, res) => {
+        try {
+            const response = await usersService.createExecutive(req);
+            return res.status(response.success ? 201 : 400).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Unexpected controller error',
+            });
+        }
+    };
+
     update = async (req, res) => {
         try {
             const response = await usersService.update(req);
