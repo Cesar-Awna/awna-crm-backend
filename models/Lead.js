@@ -79,6 +79,7 @@ const leadSchema = new Schema(
         emailSentCount:       { type: Number, default: 0 },
         quoteSentCount:       { type: Number, default: 0 },
         rescheduleCount:      { type: Number, default: 0 },
+        closureCount:         { type: Number, default: 0 },
         activityCounts:       { type: Map, of: Number, default: {} },
         fields:               { type: Map, of: Schema.Types.Mixed, default: {} },
     },

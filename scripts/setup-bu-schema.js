@@ -23,6 +23,14 @@ const LEAD_SCHEMA = [
     { key: 'correo',           label: 'Correo',                    type: 'email',    required: true,  options: [], placeholder: 'Ej: juan@empresa.com', order: 3 },
     { key: 'telefono',         label: 'Teléfono',                  type: 'phone',    required: true,  options: [], placeholder: 'Ej: +56 9 1234 5678', order: 4 },
     { key: 'fechaIngreso',     label: 'Fecha de ingreso del lead',  type: 'date',     required: false, options: [], placeholder: 'dd/mm/aaaa', order: 5 },
+    { key: 'callCount',        label: 'Llamadas realizadas',       type: 'number',   required: false, options: [], placeholder: '0', order: 6 },
+    { key: 'contactSuccessCount', label: 'Contactos efectivos',    type: 'number',   required: false, options: [], placeholder: '0', order: 7 },
+    { key: 'followupCount',    label: 'Seguimientos realizados',   type: 'number',   required: false, options: [], placeholder: '0', order: 8 },
+    { key: 'whatsappSentCount', label: 'WhatsApp enviados',        type: 'number',   required: false, options: [], placeholder: '0', order: 9 },
+    { key: 'emailSentCount',   label: 'Correos enviados',          type: 'number',   required: false, options: [], placeholder: '0', order: 10 },
+    { key: 'quoteSentCount',   label: 'Cotizaciones enviadas',     type: 'number',   required: false, options: [], placeholder: '0', order: 11 },
+    { key: 'rescheduleCount',  label: 'Reagendamientos',           type: 'number',   required: false, options: [], placeholder: '0', order: 12 },
+    { key: 'closureCount',     label: 'Cierres (ventas)',          type: 'number',   required: false, options: [], placeholder: '0', order: 13 },
 ];
 
 const PIPELINE_STAGES = [
