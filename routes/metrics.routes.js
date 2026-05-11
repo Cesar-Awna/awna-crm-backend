@@ -47,4 +47,10 @@ router.get(
     metricsController.getActivityMetrics
 );
 
+router.get(
+    '/activity-counters',
+    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
+    metricsController.getActivityCounters
+);
+
 export default router;

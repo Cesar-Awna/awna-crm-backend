@@ -342,4 +342,69 @@ export default class MetricsService {
             return { success: false, message: 'Error retrieving summary metrics' };
         }
     };
+
+    getActivityCounters = async (req) => {
+        try {
+            const companyId = req.companyId;
+            const role = req.user?.role;
+
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
+            }
+
+            // Determine business unit scope
+            let businessUnitId = req.businessUnitId;
+            let filter = { companyId };
+
+            if (role === 'SUPERVISOR') {
+                const supervisorBuId = req.user.businessUnitIds?.[0];
+                if (!supervisorBuId) {
+                    return { success: false, message: 'Supervisor sin unidad de negocio asignada' };
+                }
+                businessUnitId = supervisorBuId;
+            }
+
+            if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
+            }
+
+            // Aggregate all activity counters from leads
+            const counters = await Lead.aggregate([
+                { $match: filter },
+                {
+                    $group: {
+                        _id: null,
+                        callCount: { $sum: '$callCount' },
+                        contactSuccessCount: { $sum: '$contactSuccessCount' },
+                        followupCount: { $sum: '$followupCount' },
+                        whatsappSentCount: { $sum: '$whatsappSentCount' },
+                        emailSentCount: { $sum: '$emailSentCount' },
+                        quoteSentCount: { $sum: '$quoteSentCount' },
+                        rescheduleCount: { $sum: '$rescheduleCount' },
+                        closureCount: { $sum: '$closureCount' },
+                    },
+                },
+            ]);
+
+            const data = counters.length > 0 ? counters[0] : {
+                callCount: 0,
+                contactSuccessCount: 0,
+                followupCount: 0,
+                whatsappSentCount: 0,
+                emailSentCount: 0,
+                quoteSentCount: 0,
+                rescheduleCount: 0,
+                closureCount: 0,
+            };
+
+            return {
+                success: true,
+                message: 'Activity counters retrieved',
+                data,
+            };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error retrieving activity counters' };
+        }
+    };
 }
