@@ -112,6 +112,11 @@ export default class LeadsService {
                 payload.status = 'NUEVO';
             }
 
+            // Ensure nextContactDate is a valid Date object
+            if (payload.nextContactDate && typeof payload.nextContactDate === 'string') {
+                payload.nextContactDate = new Date(payload.nextContactDate + 'T00:00:00Z');
+            }
+
             const data = await Lead.create(payload);
 
             return {
@@ -140,6 +145,11 @@ export default class LeadsService {
             const updateBody = { ...req.body };
             delete updateBody.companyId;
             delete updateBody.businessUnitId;
+
+            // Ensure nextContactDate is a valid Date object
+            if (updateBody.nextContactDate && typeof updateBody.nextContactDate === 'string') {
+                updateBody.nextContactDate = new Date(updateBody.nextContactDate + 'T00:00:00Z');
+            }
 
             const data = await Lead.findOneAndUpdate(filter, updateBody, {
                 new: true,
