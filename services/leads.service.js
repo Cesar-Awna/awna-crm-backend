@@ -340,13 +340,13 @@ export default class LeadsService {
                     ...baseFilter,
                     nextContactDate: { $gte: today, $lt: tomorrow }
                 })
-                .select('_id fields razonSocial rutEmpresa nombreContacto correo telefono nextContactDate nextActionType status ownerUserId')
+                .select('_id fields razonSocial rutEmpresa nombreContacto contactPhone correo telefono nextContactDate nextActionType status ownerUserId')
                 .lean(),
                 Lead.find({
                     ...baseFilter,
                     nextContactDate: { $lt: today }
                 })
-                .select('_id fields razonSocial rutEmpresa nombreContacto correo telefono nextContactDate nextActionType status ownerUserId')
+                .select('_id fields razonSocial rutEmpresa nombreContacto contactPhone correo telefono nextContactDate nextActionType status ownerUserId')
                 .lean()
             ]);
 
