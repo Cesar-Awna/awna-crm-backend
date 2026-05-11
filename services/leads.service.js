@@ -307,6 +307,53 @@ export default class LeadsService {
         }
     };
 
+    getUpcomingFollowups = async (req) => {
+        try {
+            const companyId = req.companyId;
+            const businessUnitId = req.businessUnitId;
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
+            }
+            const userId = req.user?.id || req.user?._id;
+            const baseFilter = { companyId, businessUnitId, nextContactDate: { $ne: null } };
+            if (req.user?.role === 'EXECUTIVE') {
+                baseFilter.ownerUserId = userId;
+            }
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+
+            const [todayLeads, overdueLeads] = await Promise.all([
+                Lead.find({
+                    ...baseFilter,
+                    nextContactDate: { $gte: today, $lt: tomorrow }
+                })
+                .select('_id fields razonSocial rutEmpresa nombreContacto correo telefono nextContactDate nextActionType status ownerUserId')
+                .lean(),
+                Lead.find({
+                    ...baseFilter,
+                    nextContactDate: { $lt: today }
+                })
+                .select('_id fields razonSocial rutEmpresa nombreContacto correo telefono nextContactDate nextActionType status ownerUserId')
+                .lean()
+            ]);
+
+            return {
+                success: true,
+                message: 'Upcoming followups retrieved successfully',
+                data: {
+                    today: todayLeads,
+                    overdue: overdueLeads,
+                },
+            };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error retrieving upcoming followups' };
+        }
+    };
+
     registerContact = async (req) => {
         try {
             const { id } = req.params;

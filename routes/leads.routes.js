@@ -44,6 +44,12 @@ router.get(
 );
 
 router.get(
+    '/my-day/followups',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.getUpcomingFollowups
+);
+
+router.get(
     '/stats',
     requireRole(['COMPANY_ADMIN', 'SUPERVISOR']),
     leadsController.getStats
