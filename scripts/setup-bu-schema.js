@@ -17,12 +17,12 @@ async function connectDB() {
 }
 
 const LEAD_SCHEMA = [
-    { key: 'razonSocial',      label: 'Razón Social',              type: 'text',     required: true,  options: [], placeholder: '', order: 0 },
-    { key: 'rutEmpresa',       label: 'RUT Empresa',               type: 'text',     required: true,  options: [], placeholder: '', order: 1 },
-    { key: 'nombreContacto',   label: 'Nombre del Contacto',       type: 'text',     required: true,  options: [], placeholder: '', order: 2 },
-    { key: 'correo',           label: 'Correo',                    type: 'email',    required: true,  options: [], placeholder: '', order: 3 },
-    { key: 'telefono',         label: 'Teléfono',                  type: 'phone',    required: true,  options: [], placeholder: '', order: 4 },
-    { key: 'fechaIngreso',     label: 'Fecha de ingreso del lead',  type: 'date',     required: false, options: [], placeholder: '', order: 5 },
+    { key: 'razonSocial',      label: 'Razón Social',              type: 'text',     required: true,  options: [], placeholder: 'Ej: Empresa SpA', order: 0 },
+    { key: 'rutEmpresa',       label: 'RUT Empresa',               type: 'text',     required: true,  options: [], placeholder: 'Ej: 12.345.678-9', order: 1 },
+    { key: 'nombreContacto',   label: 'Nombre del Contacto',       type: 'text',     required: true,  options: [], placeholder: 'Ej: Juan Pérez', order: 2 },
+    { key: 'correo',           label: 'Correo',                    type: 'email',    required: true,  options: [], placeholder: 'Ej: juan@empresa.com', order: 3 },
+    { key: 'telefono',         label: 'Teléfono',                  type: 'phone',    required: true,  options: [], placeholder: 'Ej: +56 9 1234 5678', order: 4 },
+    { key: 'fechaIngreso',     label: 'Fecha de ingreso del lead',  type: 'date',     required: false, options: [], placeholder: 'dd/mm/aaaa', order: 5 },
 ];
 
 const PIPELINE_STAGES = [
