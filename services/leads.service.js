@@ -557,8 +557,23 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
 
+            // Map field names: normalize different Excel column name variations
+            const normalizedLeads = leads.map((lead) => {
+                const normalized = {
+                    razonSocial: lead.razonSocial || lead['Razón Social'] || '',
+                    rutEmpresa: lead.rutEmpresa || lead['Rut Empresa'] || lead['RUT Empresa'] || '',
+                    nombreContacto: lead.nombreContacto || lead['Nombre del Contacto'] ||
+                                   (lead.Nombre && lead.Apellido ? `${lead.Nombre} ${lead.Apellido}`.trim() : ''),
+                    correo: lead.correo || lead.Correo || '',
+                    telefono: lead.telefono || lead.Telefono || '',
+                    executiveEmail: lead.executiveEmail || lead['executiveEmail'] || '',
+                    fields: lead.fields || {},
+                };
+                return normalized;
+            });
+
             // Collect all unique executive emails to fetch them once
-            const executiveEmails = [...new Set(leads.map((l) => l.executiveEmail).filter(Boolean))];
+            const executiveEmails = [...new Set(normalizedLeads.map((l) => l.executiveEmail).filter(Boolean))];
             const executiveMap = {};
 
             if (executiveEmails.length > 0) {
@@ -574,8 +589,8 @@ export default class LeadsService {
             const docs = [];
             const errors = [];
 
-            for (let i = 0; i < leads.length; i++) {
-                const lead = leads[i];
+            for (let i = 0; i < normalizedLeads.length; i++) {
+                const lead = normalizedLeads[i];
                 const ownerUserId = lead.executiveEmail ? executiveMap[lead.executiveEmail] : null;
 
                 if (lead.executiveEmail && !ownerUserId) {
@@ -587,7 +602,14 @@ export default class LeadsService {
                     companyId,
                     businessUnitId,
                     status: 'NUEVO',
-                    fields: lead.fields ?? {},
+                    fields: {
+                        razonSocial: lead.razonSocial,
+                        rutEmpresa: lead.rutEmpresa,
+                        nombreContacto: lead.nombreContacto,
+                        correo: lead.correo,
+                        telefono: lead.telefono,
+                        ...lead.fields,
+                    },
                 };
 
                 if (ownerUserId) {
