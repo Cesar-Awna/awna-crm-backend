@@ -192,7 +192,23 @@ export default class UsersService {
                 companyId = req.query.companyId || req.body?.companyId || null;
             }
             if (!companyId) return { success: false, message: 'Company context required' };
-            const data = await User.findOneAndDelete({ _id: id, companyId }).lean();
+
+            const userRole = req.user?.role;
+            const requesterId = String(req.user?.id || req.user?._id);
+            if (requesterId === String(id)) {
+                return { success: false, message: 'Cannot delete yourself' };
+            }
+
+            const filter = { _id: id, companyId };
+
+            if (userRole === 'SUPERVISOR') {
+                filter.roleName = 'EXECUTIVE';
+                filter.supervisorId = requesterId;
+            } else if (userRole === 'COMPANY_ADMIN') {
+                filter.roleName = { $in: ['EXECUTIVE', 'SUPERVISOR'] };
+            }
+
+            const data = await User.findOneAndDelete(filter).lean();
             if (!data) {
                 return { success: false, message: 'User not found' };
             }

@@ -6,6 +6,21 @@ import BusinessUnit from '../models/BusinessUnit.js';
 import { getStageInfo } from '../utils/stageInfo.js';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 
+/** Misma resolución de BU que getStats (header → JWT → query). */
+const resolveBusinessUnitId = (req) => {
+    const role = req.user?.role;
+    let businessUnitId = req.businessUnitId || req.query?.businessUnitId || null;
+
+    if (!businessUnitId && (role === 'EXECUTIVE' || role === 'SUPERVISOR')) {
+        const ids = req.user?.businessUnitIds || [];
+        if (ids.length > 0) {
+            businessUnitId = ids[0];
+        }
+    }
+
+    return businessUnitId;
+};
+
 export default class LeadsService {
     constructor() {
         connectMongoDB();
@@ -14,7 +29,7 @@ export default class LeadsService {
     getAll = async (req) => {
         try {
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
+            const businessUnitId = resolveBusinessUnitId(req);
             const role = req.user?.role;
 
             if (!companyId) {
@@ -809,19 +824,48 @@ export default class LeadsService {
             const companyId = req.companyId;
             const role      = req.user?.role;
             // COMPANY_ADMIN can override via ?businessUnitId= query param
-            const businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
+            let businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
             const ownerUserId = req.query?.ownerUserId || null;
+
+            console.log('📊 getStats called:', {
+                userId: req.user?._id || req.user?.id,
+                userRole: role,
+                companyId,
+                businessUnitId,
+                userBusinessUnitIds: req.user?.businessUnitIds,
+                ownerUserId,
+            });
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
             }
+            
+            // For EXECUTIVE: use first business unit if not provided
+            if (!businessUnitId && role === 'EXECUTIVE') {
+                const userBusinessUnitIds = req.user?.businessUnitIds || [];
+                if (userBusinessUnitIds.length > 0) {
+                    businessUnitId = userBusinessUnitIds[0];
+                    console.log('✅ Resolved businessUnitId from user:', businessUnitId);
+                }
+            }
+            
             if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
+                console.log('❌ businessUnitId not resolved');
                 return { success: false, message: 'Business unit context required' };
             }
 
             const filter = { companyId };
             if (businessUnitId) filter.businessUnitId = businessUnitId;
-            if (ownerUserId) filter.ownerUserId = ownerUserId;
+            if (role === 'EXECUTIVE') {
+                filter.ownerUserId = req.user?.id || req.user?._id;
+            } else if (ownerUserId) {
+                filter.ownerUserId = ownerUserId;
+            }
+
+            const status = req.query?.status;
+            if (status) {
+                filter.status = status;
+            }
 
             const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } =
                 await getStageInfo(businessUnitId);

@@ -51,7 +51,7 @@ router.get(
 
 router.get(
     '/stats',
-    requireRole(['COMPANY_ADMIN', 'SUPERVISOR']),
+    requireRole(['EXECUTIVE', 'COMPANY_ADMIN', 'SUPERVISOR']),
     leadsController.getStats
 );
 

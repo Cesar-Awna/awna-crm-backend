@@ -60,7 +60,7 @@ router.put(
 
 router.delete(
     '/:id',
-    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN']),
+    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR']),
     usersController.delete
 );
 
