@@ -146,8 +146,8 @@ const processPeriod = async (periodType) => {
 
         const mapKey   = `${companyId}:${String(businessUnitId)}:${lead.status}`;
         const stageType = stageTypeMap.get(mapKey);
-        const isWon  = stageType ? stageType === 'won'  : lead.status === 'CERRADO_GANADO';
-        const isLost = stageType ? stageType === 'lost' : lead.status === 'CERRADO_PERDIDO';
+        const isWon  = stageType ? stageType === 'won'  : ['CERRADO_GANADO', 'CLIENTE'].includes(lead.status);
+        const isLost = stageType ? stageType === 'lost' : ['CERRADO_PERDIDO', 'NO_INTERESADO'].includes(lead.status);
         if (isWon)  agg.closedWon  += 1;
         if (isLost) agg.closedLost += 1;
     }

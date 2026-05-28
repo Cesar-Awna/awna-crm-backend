@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import BusinessUnit from '../models/BusinessUnit.js';
 import { getStageInfo } from '../utils/stageInfo.js';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
+import { uploadPdf, buildSignedDownloadUrl } from '../libs/cloudinary.js';
 
 /** Misma resolución de BU que getStats (header → JWT → query). */
 const resolveBusinessUnitId = (req) => {
@@ -39,7 +40,7 @@ export default class LeadsService {
                 return formatPaginationError('Business unit context required');
             }
 
-            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo } = req.query || {};
+            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo, fuenteLead, productoCotizado } = req.query || {};
             const filter = { companyId };
 
             if (businessUnitId) {
@@ -52,6 +53,8 @@ export default class LeadsService {
                 if (nextContactDateFrom) filter.nextContactDate.$gte = new Date(nextContactDateFrom);
                 if (nextContactDateTo) filter.nextContactDate.$lte = new Date(nextContactDateTo);
             }
+            if (fuenteLead) filter['fields.fuenteLead'] = fuenteLead;
+            if (productoCotizado) filter['fields.productoCotizado'] = productoCotizado;
 
             if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
 
@@ -511,18 +514,24 @@ export default class LeadsService {
             const filter = { _id: id, companyId, businessUnitId };
             if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
 
+            const matchedStageForUpdate = buForStatus?.pipelineStages?.find((s) => s.key === status);
+            const stageTypeForUpdate    = matchedStageForUpdate?.stageType || null;
+            const isClosing = stageTypeForUpdate === 'won' || stageTypeForUpdate === 'lost';
+            const updateFields = {
+                status,
+                closedAt: isClosing ? new Date() : null,
+            };
+
             const lead = await Lead.findOneAndUpdate(
                 filter,
-                { status },
+                updateFields,
                 { new: true, lean: true }
             );
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
             }
 
-            const matchedStage = buForStatus?.pipelineStages?.find((s) => s.key === status);
-            const stageType    = matchedStage?.stageType || null;
-            const eventType    = stageType === 'won' ? 'WON' : stageType === 'lost' ? 'LOST' : 'NOTE_ADDED';
+            const eventType = stageTypeForUpdate === 'won' ? 'WON' : stageTypeForUpdate === 'lost' ? 'LOST' : 'NOTE_ADDED';
             await LeadEvent.create({
                 companyId: lead.companyId,
                 businessUnitId: lead.businessUnitId,
@@ -794,6 +803,80 @@ export default class LeadsService {
         }
     };
 
+    logActivityWithFile = async (req) => {
+        try {
+            const { id } = req.params;
+            const { eventType, note, eventAt } = req.body || {};
+            const companyId = req.companyId;
+            const businessUnitId = req.businessUnitId;
+
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
+            }
+
+            const bu = await BusinessUnit.findById(businessUnitId).select('activityTypes').lean();
+            const allowedTypes = bu?.activityTypes?.length > 0
+                ? bu.activityTypes.map((a) => a.key)
+                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+
+            if (!eventType || !allowedTypes.includes(eventType)) {
+                return { success: false, message: 'Invalid event type' };
+            }
+
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const lead = await Lead.findOne(filter).lean();
+            if (!lead) return { success: false, message: 'Lead not found' };
+
+            let attachmentPublicId = null;
+            let attachmentName = null;
+            let signedUrl = null;
+
+            if (req.files?.file) {
+                const file = req.files.file;
+                const folder = `crm/${companyId}/leads/${id}`;
+                const publicId = `${folder}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
+                try {
+                    const result = await uploadPdf({ filePath: file.tempFilePath, publicId, folder });
+                    attachmentPublicId = result.public_id;
+                    attachmentName = file.name;
+                    signedUrl = buildSignedDownloadUrl({ publicId: result.public_id });
+                } catch (uploadErr) {
+                    console.error('Cloudinary upload error:', uploadErr);
+                    return { success: false, message: 'Error al subir el archivo.' };
+                }
+            }
+
+            const COUNTER_MAP = {
+                CALL: 'callCount', CONTACT_SUCCESS: 'contactSuccessCount',
+                FOLLOWUP: 'followupCount', WHATSAPP_SENT: 'whatsappSentCount',
+                EMAIL_SENT: 'emailSentCount', QUOTE_SENT: 'quoteSentCount',
+                RESCHEDULE: 'rescheduleCount',
+            };
+            const incObj = { [`activityCounts.${eventType}`]: 1 };
+            const legacyField = COUNTER_MAP[eventType];
+            if (legacyField) incObj[legacyField] = 1;
+
+            await Promise.all([
+                LeadEvent.create({
+                    companyId: lead.companyId,
+                    businessUnitId: lead.businessUnitId,
+                    leadId: lead._id,
+                    userId: req.user?.id || '',
+                    eventType,
+                    eventAt: eventAt ? new Date(eventAt) : new Date(),
+                    metadata: { note, attachmentPublicId, attachmentName },
+                }),
+                Lead.updateOne({ _id: lead._id }, { $inc: incObj }),
+            ]);
+
+            return { success: true, message: 'Activity logged successfully', data: { signedUrl, attachmentName } };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error logging activity' };
+        }
+    };
+
     getEvents = async (req) => {
         try {
             const { id } = req.params;
@@ -807,10 +890,20 @@ export default class LeadsService {
             const lead = await Lead.findOne(filter, '_id').lean();
             if (!lead) return { success: false, message: 'Lead not found' };
 
-            const data = await LeadEvent.find({ leadId: id, companyId })
+            const events = await LeadEvent.find({ leadId: id, companyId })
                 .sort({ eventAt: -1 })
                 .limit(50)
                 .lean();
+
+            const data = events.map((ev) => {
+                if (ev.metadata?.attachmentPublicId) {
+                    try {
+                        const signedUrl = buildSignedDownloadUrl({ publicId: ev.metadata.attachmentPublicId });
+                        return { ...ev, metadata: { ...ev.metadata, signedUrl } };
+                    } catch { return ev; }
+                }
+                return ev;
+            });
 
             return { success: true, message: 'Events retrieved successfully', data };
         } catch (error) {

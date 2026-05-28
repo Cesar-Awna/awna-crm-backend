@@ -123,6 +123,16 @@ export default class LeadsController {
         }
     };
 
+    logActivityWithFile = async (req, res) => {
+        try {
+            const response = await leadsService.logActivityWithFile(req);
+            return res.status(response.success ? 200 : 400).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
+        }
+    };
+
     getEvents = async (req, res) => {
         try {
             const response = await leadsService.getEvents(req);

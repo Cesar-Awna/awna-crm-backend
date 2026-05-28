@@ -12,6 +12,8 @@ export const LEAD_STATUSES = [
     'EN_SEGUIMIENTO',
     'CERRADO_GANADO',
     'CERRADO_PERDIDO',
+    'CLIENTE',
+    'NO_INTERESADO',
 ];
 
 const leadSchema = new Schema(
@@ -72,6 +74,7 @@ const leadSchema = new Schema(
             type: String,
             enum: ['LLAMADA', 'ENVIAR_INFO', 'REUNION', 'NOTA'],
         },
+        closedAt:             { type: Date, default: null },
         callCount:            { type: Number, default: 0 },
         contactSuccessCount:  { type: Number, default: 0 },
         followupCount:        { type: Number, default: 0 },

@@ -127,6 +127,12 @@ router.post(
     leadsController.logActivity
 );
 
+router.post(
+    '/:id/log-activity-with-file',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.logActivityWithFile
+);
+
 router.get(
     '/:id/events',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
