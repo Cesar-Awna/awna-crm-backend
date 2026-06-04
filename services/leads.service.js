@@ -343,7 +343,13 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
             const userId = req.user?.id || req.user?._id;
-            const baseFilter = { companyId, businessUnitId, nextContactDate: { $ne: null } };
+            const { closedKeys } = await getStageInfo(businessUnitId);
+            const baseFilter = {
+                companyId,
+                businessUnitId,
+                nextContactDate: { $ne: null },
+                status: { $nin: closedKeys },
+            };
             if (req.user?.role === 'EXECUTIVE') {
                 baseFilter.ownerUserId = userId;
             }
