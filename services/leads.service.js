@@ -86,7 +86,10 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
 
-            const lead = await Lead.findOne({ _id: id, companyId, businessUnitId }).lean();
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+
+            const lead = await Lead.findOne(filter).lean();
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
             }

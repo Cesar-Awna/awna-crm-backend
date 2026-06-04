@@ -141,7 +141,7 @@ router.get(
 
 router.delete(
     '/:id',
-    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
     leadsController.deleteLead
 );
 
