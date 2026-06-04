@@ -23,6 +23,16 @@ export default class LeadsController {
         }
     };
 
+    deleteLead = async (req, res) => {
+        try {
+            const response = await leadsService.deleteLead(req);
+            return res.status(response.success ? 200 : 404).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
+        }
+    };
+
     create = async (req, res) => {
         try {
             const response = await leadsService.create(req);

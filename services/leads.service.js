@@ -77,6 +77,32 @@ export default class LeadsService {
         }
     };
 
+    deleteLead = async (req) => {
+        try {
+            const { id } = req.params;
+            const companyId = req.companyId;
+            const businessUnitId = req.businessUnitId;
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
+            }
+
+            const lead = await Lead.findOne({ _id: id, companyId, businessUnitId }).lean();
+            if (!lead) {
+                return { success: false, message: 'Lead not found' };
+            }
+
+            await Promise.all([
+                Lead.deleteOne({ _id: id }),
+                LeadEvent.deleteMany({ leadId: id }),
+            ]);
+
+            return { success: true, message: 'Lead eliminado correctamente' };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error al eliminar el lead' };
+        }
+    };
+
     getById = async (req) => {
         try {
             const { id } = req.params;

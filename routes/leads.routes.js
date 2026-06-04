@@ -139,4 +139,10 @@ router.get(
     leadsController.getEvents
 );
 
+router.delete(
+    '/:id',
+    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.deleteLead
+);
+
 export default router;
