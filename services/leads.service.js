@@ -147,9 +147,13 @@ export default class LeadsService {
                 if (!payload.ownerUserId) {
                     return { success: false, message: 'Debes asignar el lead a un ejecutivo.' };
                 }
-                const owner = await User.findById(payload.ownerUserId).lean();
-                if (!owner || owner.roleName !== 'EXECUTIVE') {
-                    return { success: false, message: 'El lead debe asignarse a un ejecutivo válido.' };
+                const supervisorId = String(req.user?.id || req.user?._id);
+                const isSelfAssign = role === 'SUPERVISOR' && String(payload.ownerUserId) === supervisorId;
+                if (!isSelfAssign) {
+                    const owner = await User.findById(payload.ownerUserId).lean();
+                    if (!owner || owner.roleName !== 'EXECUTIVE') {
+                        return { success: false, message: 'El lead debe asignarse a un ejecutivo válido.' };
+                    }
                 }
             } else {
                 payload.ownerUserId = req.user?.id || req.user?._id;
