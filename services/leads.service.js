@@ -40,7 +40,7 @@ export default class LeadsService {
                 return formatPaginationError('Business unit context required');
             }
 
-            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo, fuenteLead, productoCotizado } = req.query || {};
+            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo, fuenteLead, productoCotizado, createdAtFrom, createdAtTo, closedAtFrom, closedAtTo } = req.query || {};
             const filter = { companyId };
 
             if (businessUnitId) {
@@ -52,6 +52,24 @@ export default class LeadsService {
                 filter.nextContactDate = {};
                 if (nextContactDateFrom) filter.nextContactDate.$gte = new Date(nextContactDateFrom);
                 if (nextContactDateTo) filter.nextContactDate.$lte = new Date(nextContactDateTo);
+            }
+            if (createdAtFrom || createdAtTo) {
+                filter.createdAt = {};
+                if (createdAtFrom) filter.createdAt.$gte = new Date(createdAtFrom);
+                if (createdAtTo) {
+                    const to = new Date(createdAtTo);
+                    to.setHours(23, 59, 59, 999);
+                    filter.createdAt.$lte = to;
+                }
+            }
+            if (closedAtFrom || closedAtTo) {
+                filter.closedAt = {};
+                if (closedAtFrom) filter.closedAt.$gte = new Date(closedAtFrom);
+                if (closedAtTo) {
+                    const to = new Date(closedAtTo);
+                    to.setHours(23, 59, 59, 999);
+                    filter.closedAt.$lte = to;
+                }
             }
             if (fuenteLead) filter['fields.fuenteLead'] = fuenteLead;
             if (productoCotizado) filter['fields.productoCotizado'] = productoCotizado;
