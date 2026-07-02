@@ -76,8 +76,8 @@ export default class LeadsService {
             if (q) {
                 const regex = { $regex: q.trim(), $options: 'i' };
                 filter.$or = [
-                    { razonSocial: regex },
-                    { 'fields.razonSocial': regex },
+                    { rutEmpresa: regex },
+                    { 'fields.rutEmpresa': regex },
                 ];
             }
 
