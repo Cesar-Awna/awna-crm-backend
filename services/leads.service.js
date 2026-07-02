@@ -40,7 +40,7 @@ export default class LeadsService {
                 return formatPaginationError('Business unit context required');
             }
 
-            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo, fuenteLead, productoCotizado, createdAtFrom, createdAtTo, closedAtFrom, closedAtTo } = req.query || {};
+            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo, fuenteLead, productoCotizado, createdAtFrom, createdAtTo, closedAtFrom, closedAtTo, q } = req.query || {};
             const filter = { companyId };
 
             if (businessUnitId) {
@@ -73,6 +73,13 @@ export default class LeadsService {
             }
             if (fuenteLead) filter['fields.fuenteLead'] = fuenteLead;
             if (productoCotizado) filter['fields.productoCotizado'] = productoCotizado;
+            if (q) {
+                const regex = { $regex: q.trim(), $options: 'i' };
+                filter.$or = [
+                    { razonSocial: regex },
+                    { 'fields.razonSocial': regex },
+                ];
+            }
 
             if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
 
