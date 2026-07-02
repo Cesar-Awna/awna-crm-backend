@@ -78,6 +78,8 @@ export default class LeadsService {
                 filter.$or = [
                     { rutEmpresa: regex },
                     { 'fields.rutEmpresa': regex },
+                    { razonSocial: regex },
+                    { 'fields.razonSocial': regex },
                 ];
             }
 
