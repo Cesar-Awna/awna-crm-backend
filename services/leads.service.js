@@ -706,7 +706,9 @@ export default class LeadsService {
 
             // Normalize pre-mapped leads: keys are already CRM field names
             const normalizedLeads = leads.map((lead, idx) => {
-                const rutEmpresa = (lead.rutEmpresa || '').trim();
+                // Strip leading zeros from RUT
+                const rawRut = (lead.rutEmpresa || '').trim();
+                const rutEmpresa = rawRut.replace(/^0+/, '');
                 const razonSocial = (lead.razonSocial || '').trim();
                 const nombreContacto = (lead.nombreContacto || '').trim();
                 const correo = (lead.correo || '').trim();
@@ -732,9 +734,28 @@ export default class LeadsService {
                 return { success: false, message: 'No hay leads válidos para importar.', data: { errors } };
             }
 
+            // Deduplicate: fetch existing RUTs in this BU to skip already-imported leads
+            const incomingRuts = validLeads.map((l) => l.rutEmpresa);
+            const existingDocs = await Lead.find(
+                { companyId, businessUnitId, 'fields.rutEmpresa': { $in: incomingRuts } },
+                { 'fields.rutEmpresa': 1 }
+            ).lean();
+            const existingRuts = new Set(existingDocs.map((d) => d.fields?.rutEmpresa));
+
+            const newLeads = validLeads.filter((l) => !existingRuts.has(l.rutEmpresa));
+            const skipped = validLeads.length - newLeads.length;
+
+            if (newLeads.length === 0) {
+                return {
+                    success: true,
+                    message: `0 leads importados — todos los RUTs ya existen (${skipped} duplicados omitidos).`,
+                    data: { count: 0, skipped, errors: errors.length > 0 ? errors : undefined },
+                };
+            }
+
             // If skipAssign, import without assigning to any executive
             if (req.body.skipAssign) {
-                const docs = validLeads.map((lead) => ({
+                const docs = newLeads.map((lead) => ({
                     companyId,
                     businessUnitId,
                     status: 'NUEVO',
@@ -747,10 +768,13 @@ export default class LeadsService {
                     },
                 }));
                 const result = await Lead.insertMany(docs, { ordered: false });
+                const msg = skipped > 0
+                    ? `${result.length} leads importados. ${skipped} duplicados omitidos.`
+                    : `${result.length} leads importados sin asignar.`;
                 return {
                     success: true,
-                    message: `${result.length} leads importados sin asignar.`,
-                    data: { count: result.length, created: result.length, errors: errors.length > 0 ? errors : undefined },
+                    message: msg,
+                    data: { count: result.length, skipped, errors: errors.length > 0 ? errors : undefined },
                 };
             }
 
@@ -778,8 +802,8 @@ export default class LeadsService {
 
             // Distribute leads equitably: assign to executive with fewest leads
             const docs = [];
-            for (let i = 0; i < validLeads.length; i++) {
-                const lead = validLeads[i];
+            for (let i = 0; i < newLeads.length; i++) {
+                const lead = newLeads[i];
 
                 // Find executive with minimum leads
                 let minExecId = executives[0]._id;
@@ -815,10 +839,13 @@ export default class LeadsService {
             }
 
             const result = await Lead.insertMany(docs, { ordered: false });
+            const msg = skipped > 0
+                ? `${result.length} leads importados. ${skipped} duplicados omitidos.`
+                : `${result.length} leads importados correctamente.`;
             return {
                 success: true,
-                message: `${result.length} leads importados correctamente.`,
-                data: { count: result.length, created: result.length, errors: errors.length > 0 ? errors : undefined },
+                message: msg,
+                data: { count: result.length, skipped, errors: errors.length > 0 ? errors : undefined },
             };
         } catch (error) {
             console.error('❌ Service error:', error);
