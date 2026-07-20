@@ -741,6 +741,28 @@ export default class LeadsService {
                 return { success: false, message: 'No hay leads válidos para importar.', data: { errors } };
             }
 
+            // If skipAssign, import without assigning to any executive
+            if (req.body.skipAssign) {
+                const docs = validLeads.map((lead) => ({
+                    companyId,
+                    businessUnitId,
+                    status: 'NUEVO',
+                    fields: {
+                        razonSocial: lead.razonSocial,
+                        rutEmpresa: lead.rutEmpresa,
+                        nombreContacto: lead.nombreContacto,
+                        correo: lead.correo,
+                        telefono: lead.telefono,
+                    },
+                }));
+                const result = await Lead.insertMany(docs, { ordered: false });
+                return {
+                    success: true,
+                    message: `${result.length} leads importados sin asignar.`,
+                    data: { count: result.length, created: result.length, errors: errors.length > 0 ? errors : undefined },
+                };
+            }
+
             // Get all executives assigned to this supervisor (or all executives for admin)
             let executiveFilter = { companyId, roleName: 'EXECUTIVE', businessUnitIds: { $in: [businessUnitId] } };
             if (req.user?.role === 'SUPERVISOR') {
