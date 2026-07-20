@@ -704,32 +704,23 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
 
-            // Validate and normalize leads from Excel format: Nombre, Apellido, Rut Empresa, Telefono, Correo, Razón Social
+            // Normalize pre-mapped leads: keys are already CRM field names
             const normalizedLeads = leads.map((lead, idx) => {
-                const nombre = (lead.Nombre || '').trim();
-                const apellido = (lead.Apellido || '').trim();
-                const rutEmpresa = (lead['Rut Empresa'] || '').trim();
-                const telefono = (lead.Telefono || '').trim();
-                const correo = (lead.Correo || '').trim();
-                const razonSocial = (lead['Razón Social'] || '').trim();
+                const rutEmpresa = (lead.rutEmpresa || '').trim();
+                const razonSocial = (lead.razonSocial || '').trim();
+                const nombreContacto = (lead.nombreContacto || '').trim();
+                const correo = (lead.correo || '').trim();
+                const telefono = (lead.telefono || '').trim();
 
-                // Validate required fields
-                if (!nombre || !apellido || !rutEmpresa || !telefono || !correo || !razonSocial) {
+                if (!rutEmpresa || !razonSocial) {
                     return {
                         valid: false,
                         row: idx + 1,
-                        error: 'Faltan campos requeridos (Nombre, Apellido, Rut Empresa, Telefono, Correo, Razón Social)'
+                        error: 'RUT Empresa y Razón Social son obligatorios',
                     };
                 }
 
-                return {
-                    valid: true,
-                    razonSocial,
-                    rutEmpresa,
-                    nombreContacto: `${nombre} ${apellido}`,
-                    correo,
-                    telefono,
-                };
+                return { valid: true, razonSocial, rutEmpresa, nombreContacto, correo, telefono };
             });
 
             // Separate valid and invalid leads
