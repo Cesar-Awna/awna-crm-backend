@@ -40,11 +40,14 @@ export default class LeadsService {
                 return formatPaginationError('Business unit context required');
             }
 
-            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo, fuenteLead, productoCotizado, createdAtFrom, createdAtTo, closedAtFrom, closedAtTo, q } = req.query || {};
+            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo, fuenteLead, productoCotizado, createdAtFrom, createdAtTo, closedAtFrom, closedAtTo, q, assigned } = req.query || {};
             const filter = { companyId };
 
             if (businessUnitId) {
                 filter.businessUnitId = businessUnitId;
+            }
+            if (assigned === 'true') {
+                filter.ownerUserId = { $exists: true, $nin: [null, ''] };
             }
             if (status) filter.status = status;
             if (ownerUserId) filter.ownerUserId = ownerUserId;
