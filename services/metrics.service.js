@@ -444,7 +444,6 @@ export default class MetricsService {
             const eventFilter = {
                 companyId,
                 userId: { $in: execIds },
-                eventType: { $in: ['CONTACT_ATTEMPT', 'CALL', 'CONTACT_SUCCESS'] },
                 eventAt: { $gte: sevenDaysAgo },
             };
             if (businessUnitId) eventFilter.businessUnitId = businessUnitId;
