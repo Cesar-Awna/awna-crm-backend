@@ -493,7 +493,10 @@ export default class MetricsService {
             const { wonKeys, lostKeys } = await getStageInfo(businessUnitId);
             const execIds = Object.keys(execMap);
             const leadBaseFilter = { companyId, ownerUserId: { $in: execIds } };
-            if (businessUnitId) leadBaseFilter.businessUnitId = businessUnitId;
+            if (businessUnitId) {
+                const buObjId = toObjectId(businessUnitId);
+                if (buObjId) leadBaseFilter.businessUnitId = buObjId;
+            }
 
             const closureRaw = await Lead.aggregate([
                 { $match: leadBaseFilter },
