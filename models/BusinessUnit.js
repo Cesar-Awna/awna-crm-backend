@@ -6,7 +6,7 @@ const { Schema } = mongoose;
 const leadFieldSchema = new Schema({
     key:         { type: String, required: true },
     label:       { type: String, required: true },
-    type:        { type: String, enum: ['text', 'number', 'email', 'phone', 'select', 'date', 'textarea'], default: 'text' },
+    type:        { type: String, enum: ['text', 'number', 'email', 'phone', 'select', 'multiselect', 'date', 'textarea'], default: 'text' },
     required:    { type: Boolean, default: false },
     options:     [String],
     placeholder: String,
