@@ -439,17 +439,16 @@ export default class MetricsService {
             const executives = await User.find(execFilter, '_id fullName').lean();
             if (executives.length === 0) return { success: true, data: { executives: [], days } };
 
-            const execIds = executives.map((e) => String(e._id));
+            // Build exec lookup by both _id string and any possible userId format
+            const execMap = {};
+            executives.forEach((e) => { execMap[String(e._id)] = e; });
 
+            // Query all events for the company in the period — no userId filter to avoid format mismatches
             const eventFilter = {
                 companyId,
-                userId: { $in: execIds },
                 eventAt: { $gte: sevenDaysAgo },
             };
             if (businessUnitId) eventFilter.businessUnitId = businessUnitId;
-
-            // Chile offset: UTC-4 (adjust hours for local time)
-            const CHILE_OFFSET_H = -4;
 
             const [byDayRaw, byHourRaw] = await Promise.all([
                 LeadEvent.aggregate([
@@ -469,7 +468,7 @@ export default class MetricsService {
                     {
                         $addFields: {
                             localHour: {
-                                $mod: [{ $add: [{ $hour: '$eventAt' }, 24 + CHILE_OFFSET_H] }, 24],
+                                $mod: [{ $add: [{ $hour: '$eventAt' }, 20] }, 24],
                             },
                         },
                     },
@@ -483,6 +482,7 @@ export default class MetricsService {
             ]);
 
             const { wonKeys, lostKeys } = await getStageInfo(businessUnitId);
+            const execIds = Object.keys(execMap);
             const leadBaseFilter = { companyId, ownerUserId: { $in: execIds } };
             if (businessUnitId) leadBaseFilter.businessUnitId = businessUnitId;
 
