@@ -498,15 +498,29 @@ export default class MetricsService {
                 if (buObjId) leadBaseFilter.businessUnitId = buObjId;
             }
 
-            const closureRaw = await Lead.aggregate([
-                { $match: leadBaseFilter },
-                {
-                    $group: {
-                        _id: '$ownerUserId',
-                        won: { $sum: { $cond: [{ $in: ['$status', wonKeys] }, 1, 0] } },
-                        lost: { $sum: { $cond: [{ $in: ['$status', lostKeys] }, 1, 0] } },
+            const [closureRaw, closureRaw7d] = await Promise.all([
+                // Historical: all closed leads ever
+                Lead.aggregate([
+                    { $match: leadBaseFilter },
+                    {
+                        $group: {
+                            _id: '$ownerUserId',
+                            won:  { $sum: { $cond: [{ $in: ['$status', wonKeys] },  1, 0] } },
+                            lost: { $sum: { $cond: [{ $in: ['$status', lostKeys] }, 1, 0] } },
+                        },
                     },
-                },
+                ]),
+                // Last 7 days: leads closed (closedAt set) within the period
+                Lead.aggregate([
+                    { $match: { ...leadBaseFilter, closedAt: { $gte: sevenDaysAgo } } },
+                    {
+                        $group: {
+                            _id: '$ownerUserId',
+                            won:  { $sum: { $cond: [{ $in: ['$status', wonKeys] },  1, 0] } },
+                            lost: { $sum: { $cond: [{ $in: ['$status', lostKeys] }, 1, 0] } },
+                        },
+                    },
+                ]),
             ]);
 
             const closureMap = {};
@@ -515,7 +529,15 @@ export default class MetricsService {
                 closureMap[String(r._id)] = {
                     won: r.won,
                     lost: r.lost,
-                    closureRate: closed > 0 ? Math.round((r.won / closed) * 100) : 0,
+                    closureRate: closed > 0 ? Math.round((r.won / closed) * 100) : null,
+                };
+            });
+
+            const closureMap7d = {};
+            closureRaw7d.forEach((r) => {
+                const closed = r.won + r.lost;
+                closureMap7d[String(r._id)] = {
+                    closureRate7d: closed > 0 ? Math.round((r.won / closed) * 100) : null,
                 };
             });
 
@@ -532,7 +554,8 @@ export default class MetricsService {
                     .forEach((r) => { hourMap[r._id.hour] = r.count; });
                 const callsByHour = Array.from({ length: 24 }, (_, h) => hourMap[h] || 0);
 
-                const closure = closureMap[execId] || { won: 0, lost: 0, closureRate: 0 };
+                const closure   = closureMap[execId]   || { won: 0, lost: 0, closureRate: null };
+                const closure7d = closureMap7d[execId] || { closureRate7d: null };
 
                 return {
                     userId: execId,
@@ -541,6 +564,7 @@ export default class MetricsService {
                     callsByHour,
                     won: closure.won,
                     lost: closure.lost,
+                    closureRate7d: closure7d.closureRate7d,
                     closureRate: closure.closureRate,
                 };
             });
