@@ -53,4 +53,10 @@ router.get(
     metricsController.getActivityCounters
 );
 
+router.get(
+    '/executive-report',
+    requireRole(['SUPERVISOR', 'COMPANY_ADMIN']),
+    metricsController.getExecutiveReport
+);
+
 export default router;

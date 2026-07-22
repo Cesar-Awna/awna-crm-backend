@@ -3,6 +3,7 @@ import Lead, { LEAD_STATUSES } from '../models/Lead.js';
 import LeadEvent from '../models/LeadEvent.js';
 import RankingPeriodScore from '../models/RankingPeriodScore.js';
 import BusinessUnit from '../models/BusinessUnit.js';
+import User from '../models/User.js';
 import { getStageInfo } from '../utils/stageInfo.js';
 
 const DEFAULT_ACTIVITY_TYPES = [
@@ -405,6 +406,142 @@ export default class MetricsService {
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving activity counters' };
+        }
+    };
+
+    getExecutiveReport = async (req) => {
+        try {
+            const companyId = req.companyId;
+            const role = req.user?.role;
+            if (!companyId) return { success: false, message: 'Company context required' };
+
+            let businessUnitId = req.businessUnitId;
+            if (role === 'SUPERVISOR') {
+                businessUnitId = req.user.businessUnitIds?.[0];
+            }
+
+            // Build last 7 days
+            const now = new Date();
+            const sevenDaysAgo = new Date(now);
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+            sevenDaysAgo.setHours(0, 0, 0, 0);
+
+            const days = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date(now);
+                d.setDate(d.getDate() - i);
+                days.push(d.toISOString().split('T')[0]);
+            }
+
+            // Get executives
+            const execFilter = { companyId, roleName: 'EXECUTIVE', isActive: true };
+            if (businessUnitId) execFilter.businessUnitIds = { $in: [businessUnitId] };
+            const executives = await User.find(execFilter, '_id fullName').lean();
+            if (executives.length === 0) return { success: true, data: { executives: [], days } };
+
+            const execIds = executives.map((e) => String(e._id));
+
+            const eventFilter = {
+                companyId,
+                userId: { $in: execIds },
+                eventType: { $in: ['CONTACT_ATTEMPT', 'CALL', 'CONTACT_SUCCESS'] },
+                eventAt: { $gte: sevenDaysAgo },
+            };
+            if (businessUnitId) eventFilter.businessUnitId = businessUnitId;
+
+            // Chile offset: UTC-4 (adjust hours for local time)
+            const CHILE_OFFSET_H = -4;
+
+            const [byDayRaw, byHourRaw] = await Promise.all([
+                LeadEvent.aggregate([
+                    { $match: eventFilter },
+                    {
+                        $group: {
+                            _id: {
+                                userId: '$userId',
+                                date: { $dateToString: { format: '%Y-%m-%d', date: '$eventAt', timezone: '-04:00' } },
+                            },
+                            count: { $sum: 1 },
+                        },
+                    },
+                ]),
+                LeadEvent.aggregate([
+                    { $match: eventFilter },
+                    {
+                        $addFields: {
+                            localHour: {
+                                $mod: [{ $add: [{ $hour: '$eventAt' }, 24 + CHILE_OFFSET_H] }, 24],
+                            },
+                        },
+                    },
+                    {
+                        $group: {
+                            _id: { userId: '$userId', hour: '$localHour' },
+                            count: { $sum: 1 },
+                        },
+                    },
+                ]),
+            ]);
+
+            const { wonKeys, lostKeys } = await getStageInfo(businessUnitId);
+            const leadBaseFilter = { companyId, ownerUserId: { $in: execIds } };
+            if (businessUnitId) leadBaseFilter.businessUnitId = businessUnitId;
+
+            const closureRaw = await Lead.aggregate([
+                { $match: leadBaseFilter },
+                {
+                    $group: {
+                        _id: '$ownerUserId',
+                        won: { $sum: { $cond: [{ $in: ['$status', wonKeys] }, 1, 0] } },
+                        lost: { $sum: { $cond: [{ $in: ['$status', lostKeys] }, 1, 0] } },
+                    },
+                },
+            ]);
+
+            const closureMap = {};
+            closureRaw.forEach((r) => {
+                const closed = r.won + r.lost;
+                closureMap[String(r._id)] = {
+                    won: r.won,
+                    lost: r.lost,
+                    closureRate: closed > 0 ? Math.round((r.won / closed) * 100) : 0,
+                };
+            });
+
+            const executiveData = executives.map((exec) => {
+                const execId = String(exec._id);
+
+                const dayMap = {};
+                byDayRaw.filter((r) => String(r._id.userId) === execId)
+                    .forEach((r) => { dayMap[r._id.date] = r.count; });
+                const callsByDay = days.map((d) => dayMap[d] || 0);
+
+                const hourMap = {};
+                byHourRaw.filter((r) => String(r._id.userId) === execId)
+                    .forEach((r) => { hourMap[r._id.hour] = r.count; });
+                const callsByHour = Array.from({ length: 24 }, (_, h) => hourMap[h] || 0);
+
+                const closure = closureMap[execId] || { won: 0, lost: 0, closureRate: 0 };
+
+                return {
+                    userId: execId,
+                    fullName: exec.fullName,
+                    callsByDay,
+                    callsByHour,
+                    won: closure.won,
+                    lost: closure.lost,
+                    closureRate: closure.closureRate,
+                };
+            });
+
+            return {
+                success: true,
+                message: 'Executive report retrieved',
+                data: { executives: executiveData, days },
+            };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error retrieving executive report' };
         }
     };
 }
