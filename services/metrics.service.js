@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import connectMongoDB from '../libs/mongoose.js';
 import Lead, { LEAD_STATUSES } from '../models/Lead.js';
 import LeadEvent from '../models/LeadEvent.js';
@@ -5,6 +6,10 @@ import RankingPeriodScore from '../models/RankingPeriodScore.js';
 import BusinessUnit from '../models/BusinessUnit.js';
 import User from '../models/User.js';
 import { getStageInfo } from '../utils/stageInfo.js';
+
+const toObjectId = (id) => {
+    try { return new mongoose.Types.ObjectId(String(id)); } catch { return null; }
+};
 
 const DEFAULT_ACTIVITY_TYPES = [
     { key: 'CALL',            label: 'Llamada realizada' },
@@ -444,11 +449,15 @@ export default class MetricsService {
             executives.forEach((e) => { execMap[String(e._id)] = e; });
 
             // Query all events for the company in the period — no userId filter to avoid format mismatches
+            // businessUnitId must be cast to ObjectId for aggregation pipelines (no auto-casting like Mongoose queries)
             const eventFilter = {
                 companyId,
                 eventAt: { $gte: sevenDaysAgo },
             };
-            if (businessUnitId) eventFilter.businessUnitId = businessUnitId;
+            if (businessUnitId) {
+                const buObjId = toObjectId(businessUnitId);
+                if (buObjId) eventFilter.businessUnitId = buObjId;
+            }
 
             const [byDayRaw, byHourRaw] = await Promise.all([
                 LeadEvent.aggregate([
