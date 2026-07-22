@@ -22,10 +22,10 @@ export const requireBusinessUnitMiddleware = (req, res, next) => {
             userId: req.user._id || req.user.id,
         });
 
-        // COMPANY_ADMIN can access all business units (omit header for "all")
-        if (req.user.role === 'COMPANY_ADMIN' && !businessUnitId) {
-            req.businessUnitId = null;
-            console.log('✅ COMPANY_ADMIN without header allowed');
+        // COMPANY_ADMIN can access any business unit — with or without header
+        if (req.user.role === 'COMPANY_ADMIN') {
+            req.businessUnitId = businessUnitId || null;
+            console.log('✅ COMPANY_ADMIN access granted, buId:', req.businessUnitId || 'all');
             return next();
         }
 
