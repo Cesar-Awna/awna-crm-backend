@@ -884,9 +884,7 @@ export default class LeadsService {
             const { eventType, note, eventAt } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            console.log(`📝 logActivity: leadId=${id} userId=${req.user?.id} role=${req.user?.role} eventType=${eventType} companyId=${companyId} businessUnitId=${businessUnitId}`);
             if (!companyId) {
-                console.log('❌ logActivity: missing companyId');
                 return { success: false, message: 'Company context required' };
             }
             const bu = businessUnitId
@@ -897,7 +895,6 @@ export default class LeadsService {
                 : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
 
             if (!eventType || !allowedTypes.includes(eventType)) {
-                console.log(`❌ logActivity: invalid eventType=${eventType} allowed=${JSON.stringify(allowedTypes)}`);
                 return { success: false, message: 'Invalid event type' };
             }
             // For executives, security check is ownerUserId (not businessUnitId),
@@ -908,13 +905,8 @@ export default class LeadsService {
             } else if (businessUnitId) {
                 filter.businessUnitId = businessUnitId;
             }
-            console.log(`📝 logActivity filter: ${JSON.stringify(filter)}`);
             const lead = await Lead.findOne(filter).lean();
-            if (!lead) {
-                console.log(`❌ logActivity: lead not found with filter ${JSON.stringify(filter)}`);
-                return { success: false, message: 'Lead not found' };
-            }
-            console.log(`✅ logActivity: lead found, creating event`);
+            if (!lead) return { success: false, message: 'Lead not found' };
 
             // Legacy counter map kept for backward compat — also increment activityCounts map
             const COUNTER_MAP = {
