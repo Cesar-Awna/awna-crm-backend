@@ -112,12 +112,16 @@ export default class LeadsService {
             const { id } = req.params;
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
 
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (req.user?.role === 'EXECUTIVE') {
+                filter.ownerUserId = req.user?.id || req.user?._id;
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
+            }
 
             const lead = await Lead.findOne(filter).lean();
             if (!lead) {
@@ -141,12 +145,14 @@ export default class LeadsService {
             const { id } = req.params;
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
+            const filter = { _id: id, companyId };
             if (req.user?.role === 'EXECUTIVE') {
                 filter.ownerUserId = req.user?.id || req.user?._id;
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
             }
             const data = await Lead.findOne(filter).lean();
             if (!data) {
@@ -216,12 +222,14 @@ export default class LeadsService {
             const { id } = req.params;
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
+            const filter = { _id: id, companyId };
             if (req.user?.role === 'EXECUTIVE') {
                 filter.ownerUserId = req.user?.id || req.user?._id;
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
             }
             const updateBody = { ...req.body };
             delete updateBody.companyId;
@@ -457,11 +465,15 @@ export default class LeadsService {
             const { outcome, notes } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (req.user?.role === 'EXECUTIVE') {
+                filter.ownerUserId = req.user?.id || req.user?._id;
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
+            }
             const lead = await Lead.findOne(filter).lean();
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
@@ -530,14 +542,18 @@ export default class LeadsService {
             const { note } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
             if (!note) {
                 return { success: false, message: 'note is required' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (req.user?.role === 'EXECUTIVE') {
+                filter.ownerUserId = req.user?.id || req.user?._id;
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
+            }
             const lead = await Lead.findOne(filter).lean();
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
@@ -570,18 +586,24 @@ export default class LeadsService {
             const { status } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const buForStatus = await BusinessUnit.findById(businessUnitId).select('pipelineStages').lean();
-        const validStatuses = buForStatus?.pipelineStages?.length > 0
-            ? buForStatus.pipelineStages.map((s) => s.key)
-            : LEAD_STATUSES;
-        if (!status || !validStatuses.includes(status)) {
-            return { success: false, message: 'Invalid status' };
-        }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const buForStatus = businessUnitId
+                ? await BusinessUnit.findById(businessUnitId).select('pipelineStages').lean()
+                : null;
+            const validStatuses = buForStatus?.pipelineStages?.length > 0
+                ? buForStatus.pipelineStages.map((s) => s.key)
+                : LEAD_STATUSES;
+            if (!status || !validStatuses.includes(status)) {
+                return { success: false, message: 'Invalid status' };
+            }
+            const filter = { _id: id, companyId };
+            if (req.user?.role === 'EXECUTIVE') {
+                filter.ownerUserId = req.user?.id || req.user?._id;
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
+            }
 
             const matchedStageForUpdate = buForStatus?.pipelineStages?.find((s) => s.key === status);
             const stageTypeForUpdate    = matchedStageForUpdate?.stageType || null;
