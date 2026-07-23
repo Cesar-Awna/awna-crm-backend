@@ -1,5 +1,6 @@
 import connectMongoDB from '../libs/mongoose.js';
 import User from '../models/User.js';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 
@@ -379,9 +380,14 @@ export default class UsersService {
 
             // If requester is SUPERVISOR, show executives assigned to them or in their BUs
             if (req.user?.role === 'SUPERVISOR') {
+                const supervisorId = req.user.id || req.user._id;
+                const buIds = (req.user.businessUnitIds || []).map((id) => {
+                    try { return new mongoose.Types.ObjectId(id); } catch { return id; }
+                });
                 filter.$or = [
-                    { supervisorId: String(req.user.id || req.user._id) },
-                    { businessUnitIds: { $in: req.user.businessUnitIds } }
+                    { supervisorId: String(supervisorId) },
+                    { supervisorId: supervisorId },
+                    ...(buIds.length > 0 ? [{ businessUnitIds: { $in: buIds } }] : []),
                 ];
             }
 
