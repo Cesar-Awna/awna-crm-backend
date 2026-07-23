@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import connectMongoDB from '../libs/mongoose.js';
 import Lead from '../models/Lead.js';
+import User from '../models/User.js';
 import Notification from '../models/Notification.js';
 import BusinessUnit from '../models/BusinessUnit.js';
 import { buildBUStageTypeMaps } from '../utils/stageInfo.js';
@@ -93,8 +94,62 @@ const generateNotifications = async () => {
         }
     }
 
+    // LEAD_DORMANT_SUPERVISOR: notify supervisor when their executive's lead has 5+ days without activity
+    const fiveDaysAgo = new Date(now.getTime() - 5 * MS_PER_DAY);
+    const dormantForSupervisor = await Lead.find({
+        status: { $nin: [...closedStatusSet] },
+        ownerUserId: { $exists: true, $nin: [null, ''] },
+        updatedAt: { $lt: fiveDaysAgo },
+    })
+        .select('_id companyId businessUnitId ownerUserId fields razonSocial')
+        .lean();
+
+    // Cache executives and their supervisors to avoid redundant DB calls
+    const execCache = {};
+    let supervisorNotifCount = 0;
+
+    for (const lead of dormantForSupervisor) {
+        const execId = String(lead.ownerUserId);
+
+        if (!execCache[execId]) {
+            const exec = await User.findOne({ _id: execId })
+                .select('fullName supervisorId')
+                .lean();
+            execCache[execId] = exec || null;
+        }
+
+        const exec = execCache[execId];
+        if (!exec?.supervisorId) continue;
+
+        const supervisorId = String(exec.supervisorId);
+        const leadName = lead.fields?.razonSocial || lead.fields?.nombre ||
+                         lead.razonSocial || 'Sin nombre';
+
+        const existing = await Notification.findOne({
+            userId: supervisorId,
+            leadId: String(lead._id),
+            type: 'LEAD_DORMANT_SUPERVISOR',
+            createdAt: { $gte: todayStart },
+        })
+            .select('_id')
+            .lean();
+
+        if (!existing) {
+            await Notification.create({
+                companyId: lead.companyId,
+                businessUnitId: lead.businessUnitId,
+                userId: supervisorId,
+                leadId: String(lead._id),
+                type: 'LEAD_DORMANT_SUPERVISOR',
+                title: 'Lead dormido en tu equipo',
+                body: `${exec.fullName} tiene un lead sin actividad hace más de 5 días: ${leadName}`,
+            });
+            supervisorNotifCount++;
+        }
+    }
+
     console.log(
-        `✅ [notifications.job] Generadas: ${meetingCount} MEETING_TODAY, ${dormantCount} LEAD_DORMANT`
+        `✅ [notifications.job] Generadas: ${meetingCount} MEETING_TODAY, ${dormantCount} LEAD_DORMANT, ${supervisorNotifCount} LEAD_DORMANT_SUPERVISOR`
     );
 };
 

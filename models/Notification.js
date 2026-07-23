@@ -26,6 +26,7 @@ const notificationSchema = new Schema(
                 'MEETING_24H',
                 'LEAD_DORMANT',
                 'LEAD_STAGNATION_CRITICAL',
+                'LEAD_DORMANT_SUPERVISOR',
             ],
         },
         title: {
