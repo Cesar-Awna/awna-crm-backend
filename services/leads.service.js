@@ -355,7 +355,7 @@ export default class LeadsService {
             ]);
             const ACTIVITY_TYPES = buData?.activityTypes?.length > 0
                 ? buData.activityTypes.map((a) => a.key)
-                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+                : ['CALL', 'NO_CONTESTO', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
             const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } = stageInfo;
             const eventFilter = {
                 companyId,
@@ -892,7 +892,7 @@ export default class LeadsService {
                 : null;
             const allowedTypes = bu?.activityTypes?.length > 0
                 ? bu.activityTypes.map((a) => a.key)
-                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+                : ['CALL', 'NO_CONTESTO', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
 
             if (!eventType || !allowedTypes.includes(eventType)) {
                 return { success: false, message: 'Invalid event type' };
@@ -958,7 +958,7 @@ export default class LeadsService {
                 : null;
             const allowedTypes = bu?.activityTypes?.length > 0
                 ? bu.activityTypes.map((a) => a.key)
-                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+                : ['CALL', 'NO_CONTESTO', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
 
             if (!eventType || !allowedTypes.includes(eventType)) {
                 return { success: false, message: 'Invalid event type' };
