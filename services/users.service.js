@@ -385,6 +385,12 @@ export default class UsersService {
                 ];
             }
 
+            // Filter by active BU when header is present (admin BU switcher)
+            const activeBuId = req.headers['x-business-unit-id'];
+            if (activeBuId && req.user?.role !== 'SUPERVISOR') {
+                filter.businessUnitIds = activeBuId;
+            }
+
             const result = await User.paginate(
                 filter,
                 { page, limit, sort, lean: true }
@@ -409,8 +415,14 @@ export default class UsersService {
             if (!companyId) return formatPaginationError('Company context required');
 
             const { page, limit, sort } = parsePaginationParams(req);
+            const filter = { companyId, roleName: 'SUPERVISOR' };
+
+            // Filter by active BU when header is present (admin BU switcher)
+            const activeBuId = req.headers['x-business-unit-id'];
+            if (activeBuId) filter.businessUnitIds = activeBuId;
+
             const result = await User.paginate(
-                { companyId, roleName: 'SUPERVISOR' },
+                filter,
                 { page, limit, sort, lean: true }
             );
 
