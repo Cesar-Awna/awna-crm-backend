@@ -133,6 +133,12 @@ router.post(
     leadsController.logActivityWithFile
 );
 
+router.patch(
+    '/:id/dismiss-followup',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.dismissFollowup
+);
+
 router.get(
     '/:id/events',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),

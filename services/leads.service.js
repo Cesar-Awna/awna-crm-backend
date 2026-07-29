@@ -420,6 +420,13 @@ export default class LeadsService {
                 businessUnitId,
                 nextContactDate: { $ne: null },
                 status: { $nin: closedKeys },
+                // Exclude leads where followup was dismissed after it was scheduled
+                $expr: {
+                    $or: [
+                        { $eq: [{ $ifNull: ['$followupDismissedAt', null] }, null] },
+                        { $lt: ['$followupDismissedAt', '$nextContactDate'] },
+                    ],
+                },
             };
             if (req.user?.role === 'EXECUTIVE') {
                 baseFilter.ownerUserId = userId;
@@ -456,6 +463,25 @@ export default class LeadsService {
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving upcoming followups' };
+        }
+    };
+
+    dismissFollowup = async (req) => {
+        try {
+            const { id } = req.params;
+            const companyId = req.companyId;
+            const filter = { _id: id, companyId };
+            if (req.user?.role === 'EXECUTIVE') {
+                filter.ownerUserId = req.user?.id || req.user?._id;
+            }
+            const lead = await Lead.findOne(filter).lean();
+            if (!lead) return { success: false, message: 'Lead not found' };
+
+            await Lead.updateOne({ _id: lead._id }, { $set: { followupDismissedAt: new Date() } });
+            return { success: true, message: 'Followup dismissed' };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error dismissing followup' };
         }
     };
 

@@ -100,27 +100,49 @@ export default class AuthService {
             const { refreshToken } = req.body || {};
 
             if (!refreshToken) {
-                return {
-                    success: false,
-                    message: 'Refresh token is required',
-                };
+                return { success: false, message: 'Refresh token is required' };
+            }
+            if (!JWT_SECRET) {
+                return { success: false, message: 'Server configuration error' };
             }
 
-            const newAccessToken = `access-refreshed-${Date.now()}`;
+            let decoded;
+            try {
+                decoded = jwt.verify(refreshToken, JWT_SECRET);
+            } catch {
+                return { success: false, message: 'Invalid or expired refresh token' };
+            }
+
+            if (decoded.type !== 'refresh') {
+                return { success: false, message: 'Invalid token type' };
+            }
+
+            const user = await User.findById(decoded.id).lean();
+            if (!user) {
+                return { success: false, message: 'User not found' };
+            }
+
+            const newAccessToken = jwt.sign(
+                {
+                    id: user._id,
+                    companyId: user.companyId,
+                    role: user.roleName,
+                    businessUnitIds: user.businessUnitIds || [],
+                    teamId: user.teamId || null,
+                    supervisorId: user.supervisorId || null,
+                },
+                JWT_SECRET,
+                { expiresIn: '1d' }
+            );
 
             return {
                 success: true,
                 message: 'Token refreshed successfully',
-                data: {
-                    accessToken: newAccessToken,
-                },
+                data: { accessToken: newAccessToken },
             };
         } catch (error) {
             console.error('❌ Service error:', error);
-            return {
-                success: false,
-                message: 'Unexpected service error during refresh',
-            };
+            return { success: false, message: 'Unexpected service error during refresh' };
         }
     };
 
