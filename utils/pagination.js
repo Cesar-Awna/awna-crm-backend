@@ -11,7 +11,7 @@ export const parsePaginationParams = (req) => {
   // Validations
   if (page < 1) page = 1;
   if (limit < 1) limit = 20;
-  if (limit > 100) limit = 100; // Max 100 per page
+  if (limit > 1000) limit = 1000; // Max 1000 per page
 
   return { page, limit, sort };
 };
