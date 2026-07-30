@@ -28,7 +28,15 @@ export default class LeadsService {
                 return formatPaginationError('Business unit context required');
             }
 
-            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo } = req.query || {};
+            const {
+                status, ownerUserId,
+                nextContactDateFrom, nextContactDateTo,
+                createdAtFrom, createdAtTo,
+                closedAtFrom, closedAtTo,
+                fuenteLead, productoCotizado,
+                q, assigned,
+            } = req.query || {};
+
             const filter = { companyId };
 
             if (scope.hasExplicitScope) {
@@ -42,12 +50,38 @@ export default class LeadsService {
             } else if (scope.businessUnitId) {
                 filter.businessUnitId = scope.businessUnitId;
             }
+
             if (status) filter.status = status;
             if (ownerUserId) filter.ownerUserId = ownerUserId;
+            if (assigned === 'true') filter.ownerUserId = { $exists: true, $nin: [null, ''] };
+
             if (nextContactDateFrom || nextContactDateTo) {
                 filter.nextContactDate = {};
                 if (nextContactDateFrom) filter.nextContactDate.$gte = new Date(nextContactDateFrom);
                 if (nextContactDateTo) filter.nextContactDate.$lte = new Date(nextContactDateTo);
+            }
+            if (createdAtFrom || createdAtTo) {
+                filter.createdAt = {};
+                if (createdAtFrom) filter.createdAt.$gte = new Date(createdAtFrom);
+                if (createdAtTo) filter.createdAt.$lte = new Date(createdAtTo + 'T23:59:59');
+            }
+            if (closedAtFrom || closedAtTo) {
+                filter.closedAt = {};
+                if (closedAtFrom) filter.closedAt.$gte = new Date(closedAtFrom);
+                if (closedAtTo) filter.closedAt.$lte = new Date(closedAtTo + 'T23:59:59');
+            }
+            if (fuenteLead) filter['fields.fuenteLead'] = fuenteLead;
+            if (productoCotizado) filter['fields.productoCotizado'] = productoCotizado;
+            if (q) {
+                const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                filter.$or = [
+                    { 'fields.razonSocial': regex },
+                    { 'fields.rutEmpresa': regex },
+                    { 'fields.rut': regex },
+                    { 'fields.nombreContacto': regex },
+                    { 'fields.nombre': regex },
+                    { 'fields.telefono': regex },
+                ];
             }
 
             if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
@@ -324,7 +358,7 @@ export default class LeadsService {
                         Lead.countDocuments({ ...baseFilter, status: s }).then((n) => [s, n])
                     )
                 ),
-                Lead.countDocuments({ ...baseFilter, status: { $in: wonKeys },  updatedAt: { $gte: startOfMonth } }),
+                Lead.countDocuments({ ...baseFilter, status: { $in: wonKeys }, updatedAt: { $gte: startOfMonth } }),
                 Lead.countDocuments({ ...baseFilter, status: { $in: lostKeys }, updatedAt: { $gte: startOfMonth } }),
                 Promise.all(
                     ACTIVITY_TYPES.map((t) =>
@@ -336,7 +370,7 @@ export default class LeadsService {
             const byStatus = Object.fromEntries(countsArr);
             const todayByActivity = Object.fromEntries(todayEventEntries);
             const invalidCount = invalidKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
-            const openCount    = statusKeys.filter((k) => !closedKeys.includes(k)).reduce((acc, k) => acc + (byStatus[k] || 0), 0);
+            const openCount = statusKeys.filter((k) => !closedKeys.includes(k)).reduce((acc, k) => acc + (byStatus[k] || 0), 0);
 
             return {
                 success: true,
@@ -383,14 +417,14 @@ export default class LeadsService {
                     ...baseFilter,
                     nextContactDate: { $gte: today, $lt: tomorrow }
                 })
-                .select('_id fields razonSocial rutEmpresa nombreContacto contactPhone contactEmail nextContactDate nextActionType status ownerUserId')
-                .lean(),
+                    .select('_id fields razonSocial rutEmpresa nombreContacto contactPhone contactEmail nextContactDate nextActionType status ownerUserId')
+                    .lean(),
                 Lead.find({
                     ...baseFilter,
                     nextContactDate: { $lt: today }
                 })
-                .select('_id fields razonSocial rutEmpresa nombreContacto contactPhone contactEmail nextContactDate nextActionType status ownerUserId')
-                .lean()
+                    .select('_id fields razonSocial rutEmpresa nombreContacto contactPhone contactEmail nextContactDate nextActionType status ownerUserId')
+                    .lean()
             ]);
 
             return {
@@ -530,12 +564,12 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
             const buForStatus = await BusinessUnit.findById(businessUnitId).select('pipelineStages').lean();
-        const validStatuses = buForStatus?.pipelineStages?.length > 0
-            ? buForStatus.pipelineStages.map((s) => s.key)
-            : LEAD_STATUSES;
-        if (!status || !validStatuses.includes(status)) {
-            return { success: false, message: 'Invalid status' };
-        }
+            const validStatuses = buForStatus?.pipelineStages?.length > 0
+                ? buForStatus.pipelineStages.map((s) => s.key)
+                : LEAD_STATUSES;
+            if (!status || !validStatuses.includes(status)) {
+                return { success: false, message: 'Invalid status' };
+            }
             const filter = { _id: id, companyId, businessUnitId };
             if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
 
@@ -549,8 +583,8 @@ export default class LeadsService {
             }
 
             const matchedStage = buForStatus?.pipelineStages?.find((s) => s.key === status);
-            const stageType    = matchedStage?.stageType || null;
-            const eventType    = stageType === 'won' ? 'WON' : stageType === 'lost' ? 'LOST' : 'NOTE_ADDED';
+            const stageType = matchedStage?.stageType || null;
+            const eventType = stageType === 'won' ? 'WON' : stageType === 'lost' ? 'LOST' : 'NOTE_ADDED';
             await LeadEvent.create({
                 companyId: lead.companyId,
                 businessUnitId: lead.businessUnitId,
@@ -790,13 +824,13 @@ export default class LeadsService {
 
             // Legacy counter map kept for backward compat — also increment activityCounts map
             const COUNTER_MAP = {
-                CALL:            'callCount',
+                CALL: 'callCount',
                 CONTACT_SUCCESS: 'contactSuccessCount',
-                FOLLOWUP:        'followupCount',
-                WHATSAPP_SENT:   'whatsappSentCount',
-                EMAIL_SENT:      'emailSentCount',
-                QUOTE_SENT:      'quoteSentCount',
-                RESCHEDULE:      'rescheduleCount',
+                FOLLOWUP: 'followupCount',
+                WHATSAPP_SENT: 'whatsappSentCount',
+                EMAIL_SENT: 'emailSentCount',
+                QUOTE_SENT: 'quoteSentCount',
+                RESCHEDULE: 'rescheduleCount',
             };
             const incObj = { [`activityCounts.${eventType}`]: 1 };
             const legacyField = COUNTER_MAP[eventType];
@@ -850,7 +884,7 @@ export default class LeadsService {
     getStats = async (req) => {
         try {
             const companyId = req.companyId;
-            const role      = req.user?.role;
+            const role = req.user?.role;
             const userBusinessUnitIds = req.user?.businessUnitIds || [];
             const scope = resolveLeadBusinessUnitScope({ req, role });
             // COMPANY_ADMIN can override via ?businessUnitId= query param
@@ -869,7 +903,7 @@ export default class LeadsService {
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
             }
-            
+
             if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
                 console.log('❌ businessUnitId not resolved');
                 return { success: false, message: 'Business unit context required' };
@@ -902,12 +936,12 @@ export default class LeadsService {
                     Lead.countDocuments({ ...filter, status: s }).then((n) => [s, n])
                 )
             );
-            const byStatus    = Object.fromEntries(entries);
-            const total       = entries.reduce((acc, [, n]) => acc + n, 0);
-            const wonCount    = wonKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
-            const lostCount   = lostKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
+            const byStatus = Object.fromEntries(entries);
+            const total = entries.reduce((acc, [, n]) => acc + n, 0);
+            const wonCount = wonKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
+            const lostCount = lostKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
             const invalidCount = invalidKeys.reduce((acc, k) => acc + (byStatus[k] || 0), 0);
-            const openCount   = statusKeys.filter((k) => !closedKeys.includes(k))
+            const openCount = statusKeys.filter((k) => !closedKeys.includes(k))
                 .reduce((acc, k) => acc + (byStatus[k] || 0), 0);
 
             return {
