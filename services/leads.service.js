@@ -5,22 +5,6 @@ import User from '../models/User.js';
 import BusinessUnit from '../models/BusinessUnit.js';
 import { getStageInfo } from '../utils/stageInfo.js';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
-import { uploadPdf, buildSignedDownloadUrl } from '../libs/cloudinary.js';
-
-/** Misma resolución de BU que getStats (header → JWT → query). */
-const resolveBusinessUnitId = (req) => {
-    const role = req.user?.role;
-    let businessUnitId = req.businessUnitId || req.query?.businessUnitId || null;
-
-    if (!businessUnitId && (role === 'EXECUTIVE' || role === 'SUPERVISOR')) {
-        const ids = req.user?.businessUnitIds || [];
-        if (ids.length > 0) {
-            businessUnitId = ids[0];
-        }
-    }
-
-    return businessUnitId;
-};
 
 export default class LeadsService {
     constructor() {
@@ -30,24 +14,31 @@ export default class LeadsService {
     getAll = async (req) => {
         try {
             const companyId = req.companyId;
-            const businessUnitId = resolveBusinessUnitId(req);
             const role = req.user?.role;
+            const businessUnitIds = req.user?.businessUnitIds || [];
+            const requestedBusinessUnitId = req.businessUnitId || req.query?.businessUnitId || null;
+            const allowedBusinessUnitIds = Array.isArray(businessUnitIds) && businessUnitIds.length > 0
+                ? businessUnitIds
+                : (requestedBusinessUnitId ? [requestedBusinessUnitId] : []);
 
             if (!companyId) {
                 return formatPaginationError('Company context required');
             }
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
+            if (allowedBusinessUnitIds.length === 0 && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
                 return formatPaginationError('Business unit context required');
             }
 
-            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo, fuenteLead, productoCotizado, createdAtFrom, createdAtTo, closedAtFrom, closedAtTo, q, assigned } = req.query || {};
+            const { status, ownerUserId, nextContactDateFrom, nextContactDateTo } = req.query || {};
             const filter = { companyId };
 
-            if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
-            if (assigned === 'true') {
-                filter.ownerUserId = { $exists: true, $nin: [null, ''] };
+            if (role === 'SUPERVISOR' || role === 'EXECUTIVE') {
+                if (allowedBusinessUnitIds.length > 1) {
+                    filter.businessUnitId = { $in: allowedBusinessUnitIds };
+                } else if (allowedBusinessUnitIds.length === 1) {
+                    filter.businessUnitId = allowedBusinessUnitIds[0];
+                }
+            } else if (requestedBusinessUnitId) {
+                filter.businessUnitId = requestedBusinessUnitId;
             }
             if (status) filter.status = status;
             if (ownerUserId) filter.ownerUserId = ownerUserId;
@@ -55,35 +46,6 @@ export default class LeadsService {
                 filter.nextContactDate = {};
                 if (nextContactDateFrom) filter.nextContactDate.$gte = new Date(nextContactDateFrom);
                 if (nextContactDateTo) filter.nextContactDate.$lte = new Date(nextContactDateTo);
-            }
-            if (createdAtFrom || createdAtTo) {
-                filter.createdAt = {};
-                if (createdAtFrom) filter.createdAt.$gte = new Date(createdAtFrom);
-                if (createdAtTo) {
-                    const to = new Date(createdAtTo);
-                    to.setHours(23, 59, 59, 999);
-                    filter.createdAt.$lte = to;
-                }
-            }
-            if (closedAtFrom || closedAtTo) {
-                filter.closedAt = {};
-                if (closedAtFrom) filter.closedAt.$gte = new Date(closedAtFrom);
-                if (closedAtTo) {
-                    const to = new Date(closedAtTo);
-                    to.setHours(23, 59, 59, 999);
-                    filter.closedAt.$lte = to;
-                }
-            }
-            if (fuenteLead) filter['fields.fuenteLead'] = fuenteLead;
-            if (productoCotizado) filter['fields.productoCotizado'] = productoCotizado;
-            if (q) {
-                const regex = { $regex: q.trim(), $options: 'i' };
-                filter.$or = [
-                    { rutEmpresa: regex },
-                    { 'fields.rutEmpresa': regex },
-                    { razonSocial: regex },
-                    { 'fields.razonSocial': regex },
-                ];
             }
 
             if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
@@ -107,52 +69,26 @@ export default class LeadsService {
         }
     };
 
-    deleteLead = async (req) => {
-        try {
-            const { id } = req.params;
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
-            }
-
-            const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            } else if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
-
-            const lead = await Lead.findOne(filter).lean();
-            if (!lead) {
-                return { success: false, message: 'Lead not found' };
-            }
-
-            await Promise.all([
-                Lead.deleteOne({ _id: id }),
-                LeadEvent.deleteMany({ leadId: id }),
-            ]);
-
-            return { success: true, message: 'Lead eliminado correctamente' };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return { success: false, message: 'Error al eliminar el lead' };
-        }
-    };
-
     getById = async (req) => {
         try {
             const { id } = req.params;
             const companyId = req.companyId;
+            const role = req.user?.role;
+            const userBusinessUnitIds = req.user?.businessUnitIds || [];
             const businessUnitId = req.businessUnitId;
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
             }
             const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
+            if (role === 'SUPERVISOR' && userBusinessUnitIds.length > 1) {
+                filter.businessUnitId = { $in: userBusinessUnitIds };
+            } else if (role === 'SUPERVISOR' && userBusinessUnitIds.length === 1) {
+                filter.businessUnitId = userBusinessUnitIds[0];
             } else if (businessUnitId) {
                 filter.businessUnitId = businessUnitId;
+            }
+            if (req.user?.role === 'EXECUTIVE') {
+                filter.ownerUserId = req.user?.id || req.user?._id;
             }
             const data = await Lead.findOne(filter).lean();
             if (!data) {
@@ -183,13 +119,9 @@ export default class LeadsService {
                 if (!payload.ownerUserId) {
                     return { success: false, message: 'Debes asignar el lead a un ejecutivo.' };
                 }
-                const supervisorId = String(req.user?.id || req.user?._id);
-                const isSelfAssign = role === 'SUPERVISOR' && String(payload.ownerUserId) === supervisorId;
-                if (!isSelfAssign) {
-                    const owner = await User.findById(payload.ownerUserId).lean();
-                    if (!owner || owner.roleName !== 'EXECUTIVE') {
-                        return { success: false, message: 'El lead debe asignarse a un ejecutivo válido.' };
-                    }
+                const owner = await User.findById(payload.ownerUserId).lean();
+                if (!owner || owner.roleName !== 'EXECUTIVE') {
+                    return { success: false, message: 'El lead debe asignarse a un ejecutivo válido.' };
                 }
             } else {
                 payload.ownerUserId = req.user?.id || req.user?._id;
@@ -222,14 +154,12 @@ export default class LeadsService {
             const { id } = req.params;
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
             }
-            const filter = { _id: id, companyId };
+            const filter = { _id: id, companyId, businessUnitId };
             if (req.user?.role === 'EXECUTIVE') {
                 filter.ownerUserId = req.user?.id || req.user?._id;
-            } else if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
             }
             const updateBody = { ...req.body };
             delete updateBody.companyId;
@@ -262,12 +192,21 @@ export default class LeadsService {
     search = async (req) => {
         try {
             const companyId = req.companyId;
+            const role = req.user?.role;
+            const userBusinessUnitIds = req.user?.businessUnitIds || [];
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
+            }
+            const filter = { companyId };
+            if (role === 'SUPERVISOR' && userBusinessUnitIds.length > 1) {
+                filter.businessUnitId = { $in: userBusinessUnitIds };
+            } else if (role === 'SUPERVISOR' && userBusinessUnitIds.length === 1) {
+                filter.businessUnitId = userBusinessUnitIds[0];
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
             }
             const { status, q } = req.query || {};
-            const filter = { companyId, businessUnitId };
             if (status) filter.status = status;
             if (q) {
                 const rx = new RegExp(q, 'i');
@@ -302,16 +241,29 @@ export default class LeadsService {
     getAssignedList = async (req) => {
         try {
             const companyId = req.companyId;
+            const role = req.user?.role;
+            const userBusinessUnitIds = req.user?.businessUnitIds || [];
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const { closedKeys } = await getStageInfo(businessUnitId);
+            const targetBusinessUnitIds = role === 'SUPERVISOR' && userBusinessUnitIds.length > 0
+                ? userBusinessUnitIds
+                : (businessUnitId ? [businessUnitId] : []);
+            if (targetBusinessUnitIds.length === 0) {
+                return { success: false, message: 'Business unit context required' };
+            }
             const filter = {
                 companyId,
-                businessUnitId,
-                status: { $nin: closedKeys },
+                status: { $nin: [] },
             };
+            if (targetBusinessUnitIds.length > 1) {
+                filter.businessUnitId = { $in: targetBusinessUnitIds };
+            } else {
+                filter.businessUnitId = targetBusinessUnitIds[0];
+            }
+            const { closedKeys } = await getStageInfo(targetBusinessUnitIds[0]);
+            filter.status = { $nin: closedKeys };
             if (req.user?.role === 'EXECUTIVE') {
                 filter.ownerUserId = req.user?.id || req.user?._id;
             }
@@ -355,7 +307,7 @@ export default class LeadsService {
             ]);
             const ACTIVITY_TYPES = buData?.activityTypes?.length > 0
                 ? buData.activityTypes.map((a) => a.key)
-                : ['CALL', 'NO_CONTESTO', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
             const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } = stageInfo;
             const eventFilter = {
                 companyId,
@@ -414,20 +366,7 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
             const userId = req.user?.id || req.user?._id;
-            const { closedKeys } = await getStageInfo(businessUnitId);
-            const baseFilter = {
-                companyId,
-                businessUnitId,
-                nextContactDate: { $ne: null },
-                status: { $nin: closedKeys },
-                // Exclude leads where followup was dismissed after it was scheduled
-                $expr: {
-                    $or: [
-                        { $eq: [{ $ifNull: ['$followupDismissedAt', null] }, null] },
-                        { $lt: ['$followupDismissedAt', '$nextContactDate'] },
-                    ],
-                },
-            };
+            const baseFilter = { companyId, businessUnitId, nextContactDate: { $ne: null } };
             if (req.user?.role === 'EXECUTIVE') {
                 baseFilter.ownerUserId = userId;
             }
@@ -466,40 +405,17 @@ export default class LeadsService {
         }
     };
 
-    dismissFollowup = async (req) => {
-        try {
-            const { id } = req.params;
-            const companyId = req.companyId;
-            const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            }
-            const lead = await Lead.findOne(filter).lean();
-            if (!lead) return { success: false, message: 'Lead not found' };
-
-            await Lead.updateOne({ _id: lead._id }, { $set: { followupDismissedAt: new Date() } });
-            return { success: true, message: 'Followup dismissed' };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return { success: false, message: 'Error dismissing followup' };
-        }
-    };
-
     registerContact = async (req) => {
         try {
             const { id } = req.params;
             const { outcome, notes } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
             }
-            const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            } else if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter).lean();
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
@@ -568,18 +484,14 @@ export default class LeadsService {
             const { note } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
             }
             if (!note) {
                 return { success: false, message: 'note is required' };
             }
-            const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            } else if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter).lean();
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
@@ -612,43 +524,31 @@ export default class LeadsService {
             const { status } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
             }
-            const buForStatus = businessUnitId
-                ? await BusinessUnit.findById(businessUnitId).select('pipelineStages').lean()
-                : null;
-            const validStatuses = buForStatus?.pipelineStages?.length > 0
-                ? buForStatus.pipelineStages.map((s) => s.key)
-                : LEAD_STATUSES;
-            if (!status || !validStatuses.includes(status)) {
-                return { success: false, message: 'Invalid status' };
-            }
-            const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            } else if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
-
-            const matchedStageForUpdate = buForStatus?.pipelineStages?.find((s) => s.key === status);
-            const stageTypeForUpdate    = matchedStageForUpdate?.stageType || null;
-            const isClosing = stageTypeForUpdate === 'won' || stageTypeForUpdate === 'lost';
-            const updateFields = {
-                status,
-                closedAt: isClosing ? new Date() : null,
-            };
+            const buForStatus = await BusinessUnit.findById(businessUnitId).select('pipelineStages').lean();
+        const validStatuses = buForStatus?.pipelineStages?.length > 0
+            ? buForStatus.pipelineStages.map((s) => s.key)
+            : LEAD_STATUSES;
+        if (!status || !validStatuses.includes(status)) {
+            return { success: false, message: 'Invalid status' };
+        }
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
 
             const lead = await Lead.findOneAndUpdate(
                 filter,
-                updateFields,
+                { status },
                 { new: true, lean: true }
             );
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
             }
 
-            const eventType = stageTypeForUpdate === 'won' ? 'WON' : stageTypeForUpdate === 'lost' ? 'LOST' : 'NOTE_ADDED';
+            const matchedStage = buForStatus?.pipelineStages?.find((s) => s.key === status);
+            const stageType    = matchedStage?.stageType || null;
+            const eventType    = stageType === 'won' ? 'WON' : stageType === 'lost' ? 'LOST' : 'NOTE_ADDED';
             await LeadEvent.create({
                 companyId: lead.companyId,
                 businessUnitId: lead.businessUnitId,
@@ -755,25 +655,32 @@ export default class LeadsService {
                 return { success: false, message: 'Company and business unit context required' };
             }
 
-            // Normalize pre-mapped leads: keys are already CRM field names
+            // Validate and normalize leads from Excel format: Nombre, Apellido, Rut Empresa, Telefono, Correo, Razón Social
             const normalizedLeads = leads.map((lead, idx) => {
-                // Strip leading zeros from RUT
-                const rawRut = (lead.rutEmpresa || '').trim();
-                const rutEmpresa = rawRut.replace(/^0+/, '');
-                const razonSocial = (lead.razonSocial || '').trim();
-                const nombreContacto = (lead.nombreContacto || '').trim();
-                const correo = (lead.correo || '').trim();
-                const telefono = (lead.telefono || '').trim();
+                const nombre = (lead.Nombre || '').trim();
+                const apellido = (lead.Apellido || '').trim();
+                const rutEmpresa = (lead['Rut Empresa'] || '').trim();
+                const telefono = (lead.Telefono || '').trim();
+                const correo = (lead.Correo || '').trim();
+                const razonSocial = (lead['Razón Social'] || '').trim();
 
-                if (!rutEmpresa || !razonSocial) {
+                // Validate required fields
+                if (!nombre || !apellido || !rutEmpresa || !telefono || !correo || !razonSocial) {
                     return {
                         valid: false,
                         row: idx + 1,
-                        error: 'RUT Empresa y Razón Social son obligatorios',
+                        error: 'Faltan campos requeridos (Nombre, Apellido, Rut Empresa, Telefono, Correo, Razón Social)'
                     };
                 }
 
-                return { valid: true, razonSocial, rutEmpresa, nombreContacto, correo, telefono };
+                return {
+                    valid: true,
+                    razonSocial,
+                    rutEmpresa,
+                    nombreContacto: `${nombre} ${apellido}`,
+                    correo,
+                    telefono,
+                };
             });
 
             // Separate valid and invalid leads
@@ -783,50 +690,6 @@ export default class LeadsService {
 
             if (validLeads.length === 0) {
                 return { success: false, message: 'No hay leads válidos para importar.', data: { errors } };
-            }
-
-            // Deduplicate: fetch existing RUTs in this BU to skip already-imported leads
-            const incomingRuts = validLeads.map((l) => l.rutEmpresa);
-            const existingDocs = await Lead.find(
-                { companyId, businessUnitId, 'fields.rutEmpresa': { $in: incomingRuts } },
-                { 'fields.rutEmpresa': 1 }
-            ).lean();
-            const existingRuts = new Set(existingDocs.map((d) => d.fields?.rutEmpresa));
-
-            const newLeads = validLeads.filter((l) => !existingRuts.has(l.rutEmpresa));
-            const skipped = validLeads.length - newLeads.length;
-
-            if (newLeads.length === 0) {
-                return {
-                    success: true,
-                    message: `0 leads importados — todos los RUTs ya existen (${skipped} duplicados omitidos).`,
-                    data: { count: 0, skipped, errors: errors.length > 0 ? errors : undefined },
-                };
-            }
-
-            // If skipAssign, import without assigning to any executive
-            if (req.body.skipAssign) {
-                const docs = newLeads.map((lead) => ({
-                    companyId,
-                    businessUnitId,
-                    status: 'NUEVO',
-                    fields: {
-                        razonSocial: lead.razonSocial,
-                        rutEmpresa: lead.rutEmpresa,
-                        nombreContacto: lead.nombreContacto,
-                        correo: lead.correo,
-                        telefono: lead.telefono,
-                    },
-                }));
-                const result = await Lead.insertMany(docs, { ordered: false });
-                const msg = skipped > 0
-                    ? `${result.length} leads importados. ${skipped} duplicados omitidos.`
-                    : `${result.length} leads importados sin asignar.`;
-                return {
-                    success: true,
-                    message: msg,
-                    data: { count: result.length, skipped, errors: errors.length > 0 ? errors : undefined },
-                };
             }
 
             // Get all executives assigned to this supervisor (or all executives for admin)
@@ -853,8 +716,8 @@ export default class LeadsService {
 
             // Distribute leads equitably: assign to executive with fewest leads
             const docs = [];
-            for (let i = 0; i < newLeads.length; i++) {
-                const lead = newLeads[i];
+            for (let i = 0; i < validLeads.length; i++) {
+                const lead = validLeads[i];
 
                 // Find executive with minimum leads
                 let minExecId = executives[0]._id;
@@ -890,13 +753,10 @@ export default class LeadsService {
             }
 
             const result = await Lead.insertMany(docs, { ordered: false });
-            const msg = skipped > 0
-                ? `${result.length} leads importados. ${skipped} duplicados omitidos.`
-                : `${result.length} leads importados correctamente.`;
             return {
                 success: true,
-                message: msg,
-                data: { count: result.length, skipped, errors: errors.length > 0 ? errors : undefined },
+                message: `${result.length} leads importados correctamente.`,
+                data: { count: result.length, created: result.length, errors: errors.length > 0 ? errors : undefined },
             };
         } catch (error) {
             console.error('❌ Service error:', error);
@@ -910,27 +770,19 @@ export default class LeadsService {
             const { eventType, note, eventAt } = req.body || {};
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
             }
-            const bu = businessUnitId
-                ? await BusinessUnit.findById(businessUnitId).select('activityTypes').lean()
-                : null;
+            const bu = await BusinessUnit.findById(businessUnitId).select('activityTypes').lean();
             const allowedTypes = bu?.activityTypes?.length > 0
                 ? bu.activityTypes.map((a) => a.key)
-                : ['CALL', 'NO_CONTESTO', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
 
             if (!eventType || !allowedTypes.includes(eventType)) {
                 return { success: false, message: 'Invalid event type' };
             }
-            // For executives, security check is ownerUserId (not businessUnitId),
-            // because imported leads may have a different businessUnitId than the executive's header.
-            const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            } else if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter).lean();
             if (!lead) return { success: false, message: 'Lead not found' };
 
@@ -968,117 +820,23 @@ export default class LeadsService {
         }
     };
 
-    logActivityWithFile = async (req) => {
-        try {
-            const { id } = req.params;
-            const { eventType, note, eventAt } = req.body || {};
-            const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
-            }
-
-            const bu = businessUnitId
-                ? await BusinessUnit.findById(businessUnitId).select('activityTypes').lean()
-                : null;
-            const allowedTypes = bu?.activityTypes?.length > 0
-                ? bu.activityTypes.map((a) => a.key)
-                : ['CALL', 'NO_CONTESTO', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
-
-            if (!eventType || !allowedTypes.includes(eventType)) {
-                return { success: false, message: 'Invalid event type' };
-            }
-
-            const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            } else if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
-            const lead = await Lead.findOne(filter).lean();
-            if (!lead) return { success: false, message: 'Lead not found' };
-
-            let attachmentPublicId = null;
-            let attachmentName = null;
-            let signedUrl = null;
-
-            if (req.files?.file) {
-                const file = req.files.file;
-                const folder = `crm/${companyId}/leads/${id}`;
-                const publicId = `${folder}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
-                try {
-                    const result = await uploadPdf({ filePath: file.tempFilePath, publicId, folder });
-                    attachmentPublicId = result.public_id;
-                    attachmentName = file.name;
-                    signedUrl = buildSignedDownloadUrl({ publicId: result.public_id });
-                } catch (uploadErr) {
-                    console.error('Cloudinary upload error:', uploadErr);
-                    return { success: false, message: 'Error al subir el archivo.' };
-                }
-            }
-
-            const COUNTER_MAP = {
-                CALL: 'callCount', CONTACT_SUCCESS: 'contactSuccessCount',
-                FOLLOWUP: 'followupCount', WHATSAPP_SENT: 'whatsappSentCount',
-                EMAIL_SENT: 'emailSentCount', QUOTE_SENT: 'quoteSentCount',
-                RESCHEDULE: 'rescheduleCount',
-            };
-            const incObj = { [`activityCounts.${eventType}`]: 1 };
-            const legacyField = COUNTER_MAP[eventType];
-            if (legacyField) incObj[legacyField] = 1;
-
-            await Promise.all([
-                LeadEvent.create({
-                    companyId: lead.companyId,
-                    businessUnitId: lead.businessUnitId,
-                    leadId: lead._id,
-                    userId: req.user?.id || '',
-                    eventType,
-                    eventAt: eventAt ? new Date(eventAt) : new Date(),
-                    metadata: { note, attachmentPublicId, attachmentName },
-                }),
-                Lead.updateOne({ _id: lead._id }, { $inc: incObj }),
-            ]);
-
-            return { success: true, message: 'Activity logged successfully', data: { signedUrl, attachmentName } };
-        } catch (error) {
-            console.error('❌ Service error:', error);
-            return { success: false, message: 'Error logging activity' };
-        }
-    };
-
     getEvents = async (req) => {
         try {
             const { id } = req.params;
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId) {
-                return { success: false, message: 'Company context required' };
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
             }
-            const filter = { _id: id, companyId };
-            if (req.user?.role === 'EXECUTIVE') {
-                filter.ownerUserId = req.user?.id || req.user?._id;
-            } else if (businessUnitId) {
-                filter.businessUnitId = businessUnitId;
-            }
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter, '_id').lean();
             if (!lead) return { success: false, message: 'Lead not found' };
 
-            const events = await LeadEvent.find({ leadId: id, companyId })
+            const data = await LeadEvent.find({ leadId: id, companyId })
                 .sort({ eventAt: -1 })
                 .limit(50)
                 .lean();
-
-            const data = events.map((ev) => {
-                if (ev.metadata?.attachmentPublicId) {
-                    try {
-                        const signedUrl = buildSignedDownloadUrl({ publicId: ev.metadata.attachmentPublicId });
-                        return { ...ev, metadata: { ...ev.metadata, signedUrl } };
-                    } catch { return ev; }
-                }
-                return ev;
-            });
 
             return { success: true, message: 'Events retrieved successfully', data };
         } catch (error) {
@@ -1091,6 +849,7 @@ export default class LeadsService {
         try {
             const companyId = req.companyId;
             const role      = req.user?.role;
+            const userBusinessUnitIds = req.user?.businessUnitIds || [];
             // COMPANY_ADMIN can override via ?businessUnitId= query param
             let businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
             const ownerUserId = req.query?.ownerUserId || null;
@@ -1100,7 +859,7 @@ export default class LeadsService {
                 userRole: role,
                 companyId,
                 businessUnitId,
-                userBusinessUnitIds: req.user?.businessUnitIds,
+                userBusinessUnitIds,
                 ownerUserId,
             });
 
@@ -1108,9 +867,8 @@ export default class LeadsService {
                 return { success: false, message: 'Company context required' };
             }
             
-            // For EXECUTIVE: use first business unit if not provided
-            if (!businessUnitId && role === 'EXECUTIVE') {
-                const userBusinessUnitIds = req.user?.businessUnitIds || [];
+            // For EXECUTIVE/SUPERVISOR: use all assigned business units if no specific one is provided
+            if (!businessUnitId && (role === 'EXECUTIVE' || role === 'SUPERVISOR')) {
                 if (userBusinessUnitIds.length > 0) {
                     businessUnitId = userBusinessUnitIds[0];
                     console.log('✅ Resolved businessUnitId from user:', businessUnitId);
@@ -1123,7 +881,11 @@ export default class LeadsService {
             }
 
             const filter = { companyId };
-            if (businessUnitId) filter.businessUnitId = businessUnitId;
+            if (role === 'SUPERVISOR' && userBusinessUnitIds.length > 1) {
+                filter.businessUnitId = { $in: userBusinessUnitIds };
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
+            }
             if (role === 'EXECUTIVE') {
                 filter.ownerUserId = req.user?.id || req.user?._id;
             } else if (ownerUserId) {
