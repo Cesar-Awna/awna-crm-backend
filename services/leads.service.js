@@ -613,11 +613,13 @@ export default class LeadsService {
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
             const role = req.user?.role;
+            const userBusinessUnitIds = req.user?.businessUnitIds || [];
+            const isMultiBuSupervisor = role === 'SUPERVISOR' && userBusinessUnitIds.length > 1;
 
             if (!companyId) {
                 return { success: false, message: 'Company context required' };
             }
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
+            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN' && !isMultiBuSupervisor) {
                 return { success: false, message: 'Business unit context required' };
             }
 
@@ -633,6 +635,8 @@ export default class LeadsService {
             };
             if (businessUnitId) {
                 filter.businessUnitId = businessUnitId;
+            } else if (isMultiBuSupervisor) {
+                filter.businessUnitId = { $in: userBusinessUnitIds };
             }
 
             const data = await Lead.find(filter).sort({ createdAt: -1 }).lean();
@@ -906,7 +910,8 @@ export default class LeadsService {
                 return { success: false, message: 'Company context required' };
             }
 
-            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
+            const isMultiBuSupervisor = role === 'SUPERVISOR' && userBusinessUnitIds.length > 1;
+            if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN' && !isMultiBuSupervisor) {
                 console.log('❌ businessUnitId not resolved');
                 return { success: false, message: 'Business unit context required' };
             }
