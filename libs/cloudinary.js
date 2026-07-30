@@ -1,17 +1,22 @@
 import { v2 as cloudinary } from 'cloudinary';
 
-const requiredEnv = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
-
-const hasCloudinaryConfig = () => requiredEnv.every((name) => Boolean(process.env[name]));
+const hasCloudinaryConfig = () =>
+    Boolean(process.env.CLOUDINARY_URL) ||
+    ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'].every((n) => Boolean(process.env[n]));
 
 const configureCloudinary = () => {
     if (!hasCloudinaryConfig()) return false;
-    cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_API_SECRET,
-        secure: true,
-    });
+    if (process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+            secure: true,
+        });
+    } else {
+        // CLOUDINARY_URL is read automatically by the SDK
+        cloudinary.config({ secure: true });
+    }
     return true;
 };
 

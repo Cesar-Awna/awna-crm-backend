@@ -6,6 +6,7 @@ import BusinessUnit from '../models/BusinessUnit.js';
 import { getStageInfo } from '../utils/stageInfo.js';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 import { resolveLeadBusinessUnitScope } from '../utils/leadScope.js';
+import { uploadPdf } from '../libs/cloudinary.js';
 
 export default class LeadsService {
     constructor() {
@@ -859,6 +860,80 @@ export default class LeadsService {
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error logging activity' };
+        }
+    };
+
+    logActivityWithFile = async (req) => {
+        try {
+            const { id } = req.params;
+            const eventType = req.body?.eventType;
+            const note = req.body?.note;
+            const companyId = req.companyId;
+            const businessUnitId = req.businessUnitId;
+
+            if (!companyId || !businessUnitId) {
+                return { success: false, message: 'Company and business unit context required' };
+            }
+
+            const bu = await BusinessUnit.findById(businessUnitId).select('activityTypes').lean();
+            const allowedTypes = bu?.activityTypes?.length > 0
+                ? bu.activityTypes.map((a) => a.key)
+                : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
+
+            if (!eventType || !allowedTypes.includes(eventType)) {
+                return { success: false, message: 'Invalid event type' };
+            }
+
+            const filter = { _id: id, companyId, businessUnitId };
+            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const lead = await Lead.findOne(filter).lean();
+            if (!lead) return { success: false, message: 'Lead not found' };
+
+            let fileUrl = null;
+            let filePublicId = null;
+            if (req.files?.file) {
+                const file = req.files.file;
+                const safeName = file.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
+                const publicId = `leads/${companyId}/${id}/${Date.now()}_${safeName}`;
+                const uploaded = await uploadPdf({
+                    filePath: file.tempFilePath,
+                    publicId,
+                    folder: `leads/${companyId}`,
+                });
+                fileUrl = uploaded.secure_url;
+                filePublicId = uploaded.public_id;
+            }
+
+            const COUNTER_MAP = {
+                CALL: 'callCount',
+                CONTACT_SUCCESS: 'contactSuccessCount',
+                FOLLOWUP: 'followupCount',
+                WHATSAPP_SENT: 'whatsappSentCount',
+                EMAIL_SENT: 'emailSentCount',
+                QUOTE_SENT: 'quoteSentCount',
+                RESCHEDULE: 'rescheduleCount',
+            };
+            const incObj = { [`activityCounts.${eventType}`]: 1 };
+            const legacyField = COUNTER_MAP[eventType];
+            if (legacyField) incObj[legacyField] = 1;
+
+            await Promise.all([
+                LeadEvent.create({
+                    companyId: lead.companyId,
+                    businessUnitId: lead.businessUnitId,
+                    leadId: lead._id,
+                    userId: req.user?.id || req.user?._id || '',
+                    eventType,
+                    eventAt: new Date(),
+                    metadata: { note, fileUrl, filePublicId },
+                }),
+                Lead.updateOne({ _id: lead._id }, { $inc: incObj }),
+            ]);
+
+            return { success: true, message: 'Activity logged successfully', data: { fileUrl } };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error logging activity with file' };
         }
     };
 

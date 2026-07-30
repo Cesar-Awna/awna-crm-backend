@@ -6,12 +6,12 @@ import requireCompanyMiddleware from '../middlewares/requireCompany.middleware.j
 import requireBusinessUnitMiddleware from '../middlewares/requireBusinessUnit.middleware.js';
 import validate from '../middlewares/validate.middleware.js';
 import {
-  createLeadSchema,
-  changeStatusSchema,
-  assignLeadSchema,
-  registerContactSchema,
-  addNoteSchema,
-  logActivitySchema,
+    createLeadSchema,
+    changeStatusSchema,
+    assignLeadSchema,
+    registerContactSchema,
+    addNoteSchema,
+    logActivitySchema,
 } from '../validators/leads.validator.js';
 
 const router = express.Router();
@@ -133,22 +133,10 @@ router.post(
     leadsController.logActivityWithFile
 );
 
-router.patch(
-    '/:id/dismiss-followup',
-    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.dismissFollowup
-);
-
 router.get(
     '/:id/events',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
     leadsController.getEvents
-);
-
-router.delete(
-    '/:id',
-    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
-    leadsController.deleteLead
 );
 
 export default router;
