@@ -10,7 +10,8 @@
     "seed": "node scripts/seed.js",
     "reset-leads": "node scripts/reset-leads.js",
     "migrate:quotes": "node scripts/migrate-quote-attachments.js",
-    "delete:old-quotes": "node scripts/delete-old-quote-events.js"
+    "delete:old-quotes": "node scripts/delete-old-quote-events.js",
+    "preview:old-quotes": "node scripts/preview-old-quote-events.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
