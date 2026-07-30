@@ -6,7 +6,7 @@ import BusinessUnit from '../models/BusinessUnit.js';
 import { getStageInfo } from '../utils/stageInfo.js';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 import { resolveLeadBusinessUnitScope } from '../utils/leadScope.js';
-import { uploadPdf } from '../libs/cloudinary.js';
+import { uploadPdf, getPdfThumbnailUrl } from '../libs/cloudinary.js';
 
 export default class LeadsService {
     constructor() {
@@ -889,10 +889,13 @@ export default class LeadsService {
             const lead = await Lead.findOne(filter).lean();
             if (!lead) return { success: false, message: 'Lead not found' };
 
-            let fileUrl = null;
+            let signedUrl = null;
             let filePublicId = null;
+            let attachmentName = null;
+            let thumbnailUrl = null;
             if (req.files?.file) {
                 const file = req.files.file;
+                attachmentName = file.name;
                 const safeName = file.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
                 const publicId = `leads/${companyId}/${id}/${Date.now()}_${safeName}`;
                 const uploaded = await uploadPdf({
@@ -900,8 +903,9 @@ export default class LeadsService {
                     publicId,
                     folder: `leads/${companyId}`,
                 });
-                fileUrl = uploaded.secure_url;
+                signedUrl = uploaded.secure_url;
                 filePublicId = uploaded.public_id;
+                thumbnailUrl = getPdfThumbnailUrl(uploaded.public_id);
             }
 
             const COUNTER_MAP = {
@@ -925,12 +929,12 @@ export default class LeadsService {
                     userId: req.user?.id || req.user?._id || '',
                     eventType,
                     eventAt: new Date(),
-                    metadata: { note, fileUrl, filePublicId },
+                    metadata: { note, signedUrl, attachmentName, thumbnailUrl, filePublicId },
                 }),
                 Lead.updateOne({ _id: lead._id }, { $inc: incObj }),
             ]);
 
-            return { success: true, message: 'Activity logged successfully', data: { fileUrl } };
+            return { success: true, message: 'Activity logged successfully', data: { signedUrl, attachmentName, thumbnailUrl } };
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error logging activity with file' };
