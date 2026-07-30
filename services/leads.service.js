@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import BusinessUnit from '../models/BusinessUnit.js';
 import { getStageInfo } from '../utils/stageInfo.js';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
+import { resolveLeadBusinessUnitScope } from '../utils/leadScope.js';
 
 export default class LeadsService {
     constructor() {
@@ -15,11 +16,10 @@ export default class LeadsService {
         try {
             const companyId = req.companyId;
             const role = req.user?.role;
-            const businessUnitIds = req.user?.businessUnitIds || [];
-            const requestedBusinessUnitId = req.businessUnitId || req.query?.businessUnitId || null;
-            const allowedBusinessUnitIds = Array.isArray(businessUnitIds) && businessUnitIds.length > 0
-                ? businessUnitIds
-                : (requestedBusinessUnitId ? [requestedBusinessUnitId] : []);
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            const allowedBusinessUnitIds = Array.isArray(req.user?.businessUnitIds) && req.user.businessUnitIds.length > 0
+                ? req.user.businessUnitIds
+                : (scope.businessUnitId ? [scope.businessUnitId] : []);
 
             if (!companyId) {
                 return formatPaginationError('Company context required');
@@ -31,14 +31,16 @@ export default class LeadsService {
             const { status, ownerUserId, nextContactDateFrom, nextContactDateTo } = req.query || {};
             const filter = { companyId };
 
-            if (role === 'SUPERVISOR' || role === 'EXECUTIVE') {
-                if (allowedBusinessUnitIds.length > 1) {
-                    filter.businessUnitId = { $in: allowedBusinessUnitIds };
-                } else if (allowedBusinessUnitIds.length === 1) {
-                    filter.businessUnitId = allowedBusinessUnitIds[0];
+            if (scope.hasExplicitScope) {
+                filter.businessUnitId = scope.businessUnitFilter;
+            } else if (role === 'SUPERVISOR' || role === 'EXECUTIVE') {
+                if (scope.businessUnitFilter && typeof scope.businessUnitFilter === 'object') {
+                    filter.businessUnitId = scope.businessUnitFilter;
+                } else if (scope.businessUnitFilter) {
+                    filter.businessUnitId = scope.businessUnitFilter;
                 }
-            } else if (requestedBusinessUnitId) {
-                filter.businessUnitId = requestedBusinessUnitId;
+            } else if (scope.businessUnitId) {
+                filter.businessUnitId = scope.businessUnitId;
             }
             if (status) filter.status = status;
             if (ownerUserId) filter.ownerUserId = ownerUserId;
@@ -850,8 +852,9 @@ export default class LeadsService {
             const companyId = req.companyId;
             const role      = req.user?.role;
             const userBusinessUnitIds = req.user?.businessUnitIds || [];
+            const scope = resolveLeadBusinessUnitScope({ req, role });
             // COMPANY_ADMIN can override via ?businessUnitId= query param
-            let businessUnitId = req.businessUnitId || req.query.businessUnitId || null;
+            let businessUnitId = scope.businessUnitId;
             const ownerUserId = req.query?.ownerUserId || null;
 
             console.log('📊 getStats called:', {
@@ -867,21 +870,15 @@ export default class LeadsService {
                 return { success: false, message: 'Company context required' };
             }
             
-            // For EXECUTIVE/SUPERVISOR: use all assigned business units if no specific one is provided
-            if (!businessUnitId && (role === 'EXECUTIVE' || role === 'SUPERVISOR')) {
-                if (userBusinessUnitIds.length > 0) {
-                    businessUnitId = userBusinessUnitIds[0];
-                    console.log('✅ Resolved businessUnitId from user:', businessUnitId);
-                }
-            }
-            
             if (!businessUnitId && role !== 'COMPANY_ADMIN' && role !== 'SUPER_ADMIN') {
                 console.log('❌ businessUnitId not resolved');
                 return { success: false, message: 'Business unit context required' };
             }
 
             const filter = { companyId };
-            if (role === 'SUPERVISOR' && userBusinessUnitIds.length > 1) {
+            if (scope.hasExplicitScope) {
+                filter.businessUnitId = scope.businessUnitFilter;
+            } else if (role === 'SUPERVISOR' && userBusinessUnitIds.length > 1) {
                 filter.businessUnitId = { $in: userBusinessUnitIds };
             } else if (businessUnitId) {
                 filter.businessUnitId = businessUnitId;
