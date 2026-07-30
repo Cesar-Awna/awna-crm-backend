@@ -52,8 +52,11 @@ export default class LeadsService {
             }
 
             if (status) filter.status = status;
-            if (ownerUserId) filter.ownerUserId = ownerUserId;
-            if (assigned === 'true') filter.ownerUserId = { $exists: true, $nin: [null, ''] };
+            if (ownerUserId) {
+                filter.ownerUserId = ownerUserId;
+            } else if (assigned === 'true') {
+                filter.ownerUserId = { $exists: true, $nin: [null, ''] };
+            }
 
             if (nextContactDateFrom || nextContactDateTo) {
                 filter.nextContactDate = {};
@@ -71,7 +74,7 @@ export default class LeadsService {
                 if (closedAtTo) filter.closedAt.$lte = new Date(closedAtTo + 'T23:59:59');
             }
             if (fuenteLead) filter['fields.fuenteLead'] = fuenteLead;
-            if (productoCotizado) filter['fields.productoCotizado'] = productoCotizado;
+            if (productoCotizado) filter['fields.productoCotizado'] = new RegExp(productoCotizado.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
             if (q) {
                 const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
                 filter.$or = [
@@ -570,21 +573,20 @@ export default class LeadsService {
             if (!status || !validStatuses.includes(status)) {
                 return { success: false, message: 'Invalid status' };
             }
+            const matchedStage = buForStatus?.pipelineStages?.find((s) => s.key === status);
+            const stageType = matchedStage?.stageType || null;
+            const isClosing = stageType === 'won' || stageType === 'lost';
+            const eventType = stageType === 'won' ? 'WON' : stageType === 'lost' ? 'LOST' : 'NOTE_ADDED';
+
             const filter = { _id: id, companyId, businessUnitId };
             if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
 
-            const lead = await Lead.findOneAndUpdate(
-                filter,
-                { status },
-                { new: true, lean: true }
-            );
+            const updateFields = { status };
+            if (isClosing) updateFields.closedAt = new Date();
+            const lead = await Lead.findOneAndUpdate(filter, updateFields, { new: true, lean: true });
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
             }
-
-            const matchedStage = buForStatus?.pipelineStages?.find((s) => s.key === status);
-            const stageType = matchedStage?.stageType || null;
-            const eventType = stageType === 'won' ? 'WON' : stageType === 'lost' ? 'LOST' : 'NOTE_ADDED';
             await LeadEvent.create({
                 companyId: lead.companyId,
                 businessUnitId: lead.businessUnitId,
