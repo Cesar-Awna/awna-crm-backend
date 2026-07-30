@@ -27,7 +27,7 @@ export const formatPaginatedResponse = (result) => {
     data: result.docs,
     pagination: {
       currentPage: result.page,
-      totalPages: result.pages,
+      totalPages: result.totalPages,
       totalDocs: result.totalDocs,
       limit: result.limit,
       hasNextPage: result.hasNextPage,
