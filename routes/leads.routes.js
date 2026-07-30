@@ -139,4 +139,16 @@ router.get(
     leadsController.getEvents
 );
 
+router.patch(
+    '/:id/dismiss-followup',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.dismissFollowup
+);
+
+router.delete(
+    '/:id',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.deleteLead
+);
+
 export default router;
