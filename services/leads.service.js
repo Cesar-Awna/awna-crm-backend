@@ -576,8 +576,11 @@ export default class LeadsService {
             }
             const matchedStage = buForStatus?.pipelineStages?.find((s) => s.key === status);
             const stageType = matchedStage?.stageType || null;
-            const isClosing = stageType === 'won' || stageType === 'lost';
-            const eventType = stageType === 'won' ? 'WON' : stageType === 'lost' ? 'LOST' : 'NOTE_ADDED';
+            const DEFAULT_CLOSING_STATUSES = ['CERRADO_GANADO', 'CERRADO_PERDIDO'];
+            const isClosing = stageType === 'won' || stageType === 'lost'
+                || (!buForStatus?.pipelineStages?.length && DEFAULT_CLOSING_STATUSES.includes(status));
+            const isWon = stageType === 'won' || (!buForStatus?.pipelineStages?.length && status === 'CERRADO_GANADO');
+            const eventType = isWon ? 'WON' : isClosing ? 'LOST' : 'NOTE_ADDED';
 
             const filter = { _id: id, companyId, businessUnitId };
             if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
@@ -946,11 +949,20 @@ export default class LeadsService {
             const { id } = req.params;
             const companyId = req.companyId;
             const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const userBusinessUnitIds = req.user?.businessUnitIds || [];
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (role === 'SUPERVISOR' && userBusinessUnitIds.length > 1) {
+                filter.businessUnitId = { $in: userBusinessUnitIds };
+            } else if (role === 'SUPERVISOR' && userBusinessUnitIds.length === 1) {
+                filter.businessUnitId = userBusinessUnitIds[0];
+            } else if (businessUnitId) {
+                filter.businessUnitId = businessUnitId;
+            }
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter, '_id').lean();
             if (!lead) return { success: false, message: 'Lead not found' };
 
