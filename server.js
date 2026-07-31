@@ -32,25 +32,8 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',');
 // Seguridad: Headers de seguridad HTTP
 app.use(helmet());
 
-// Seguridad: Rate limiting global (100 requests per 15 minutes)
-const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 100,
-    message: 'Demasiadas solicitudes, intenta más tarde.',
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-app.use(globalLimiter);
-
-// Seguridad: Rate limiting estricto para autenticación (10 requests per 15 minutes)
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 10,
-    message: 'Demasiados intentos de login, intenta más tarde.',
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-
+// CORS debe ir antes que el rate limiter para que las respuestas 429
+// también incluyan los headers CORS y el browser no las malinterprete.
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin) return callback(null, true);
@@ -59,6 +42,25 @@ app.use(cors({
     },
     credentials: true,
 }));
+
+// Seguridad: Rate limiting global (500 requests per 15 minutes per IP)
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 500,
+    message: 'Demasiadas solicitudes, intenta más tarde.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use(globalLimiter);
+
+// Seguridad: Rate limiting estricto para autenticación (10 requests per 15 minutes)
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: 'Demasiados intentos de login, intenta más tarde.',
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 app.use(fileUpload({
     useTempFiles: true,
