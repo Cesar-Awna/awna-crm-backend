@@ -160,8 +160,8 @@ export default class LeadsService {
                     return { success: false, message: 'Debes asignar el lead a un ejecutivo.' };
                 }
                 const owner = await User.findById(payload.ownerUserId).lean();
-                if (!owner || owner.roleName !== 'EXECUTIVE') {
-                    return { success: false, message: 'El lead debe asignarse a un ejecutivo válido.' };
+                if (!owner || !['EXECUTIVE', 'SUPERVISOR'].includes(owner.roleName)) {
+                    return { success: false, message: 'El lead debe asignarse a un ejecutivo o supervisor válido.' };
                 }
             } else {
                 payload.ownerUserId = req.user?.id || req.user?._id;
