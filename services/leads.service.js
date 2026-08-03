@@ -193,12 +193,14 @@ export default class LeadsService {
         try {
             const { id } = req.params;
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') {
+            const filter = { _id: id, companyId };
+            if (scope.businessUnitFilter) filter.businessUnitId = scope.businessUnitFilter;
+            if (role === 'EXECUTIVE') {
                 filter.ownerUserId = req.user?.id || req.user?._id;
             }
             const updateBody = { ...req.body };
@@ -323,13 +325,15 @@ export default class LeadsService {
     getMyDaySummary = async (req) => {
         try {
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
             const userId = req.user?.id || req.user?._id;
-            const baseFilter = { companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') {
+            const baseFilter = { companyId };
+            if (scope.businessUnitFilter) baseFilter.businessUnitId = scope.businessUnitFilter;
+            if (role === 'EXECUTIVE') {
                 baseFilter.ownerUserId = userId;
             }
 
@@ -342,8 +346,8 @@ export default class LeadsService {
             startOfToday.setHours(0, 0, 0, 0);
 
             const [buData, stageInfo] = await Promise.all([
-                BusinessUnit.findById(businessUnitId).select('activityTypes').lean(),
-                getStageInfo(businessUnitId),
+                BusinessUnit.findById(scope.businessUnitId).select('activityTypes').lean(),
+                getStageInfo(scope.businessUnitId),
             ]);
             const ACTIVITY_TYPES = buData?.activityTypes?.length > 0
                 ? buData.activityTypes.map((a) => a.key)
@@ -351,10 +355,10 @@ export default class LeadsService {
             const { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys } = stageInfo;
             const eventFilter = {
                 companyId,
-                businessUnitId,
                 userId: String(userId),
                 eventAt: { $gte: startOfToday },
             };
+            if (scope.businessUnitFilter) eventFilter.businessUnitId = scope.businessUnitFilter;
 
             const [countsArr, wonThisMonth, lostThisMonth, todayEventEntries] = await Promise.all([
                 Promise.all(
@@ -401,13 +405,15 @@ export default class LeadsService {
     getUpcomingFollowups = async (req) => {
         try {
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
             const userId = req.user?.id || req.user?._id;
-            const baseFilter = { companyId, businessUnitId, nextContactDate: { $ne: null } };
-            if (req.user?.role === 'EXECUTIVE') {
+            const baseFilter = { companyId, nextContactDate: { $ne: null } };
+            if (scope.businessUnitFilter) baseFilter.businessUnitId = scope.businessUnitFilter;
+            if (role === 'EXECUTIVE') {
                 baseFilter.ownerUserId = userId;
             }
 
@@ -450,12 +456,14 @@ export default class LeadsService {
             const { id } = req.params;
             const { outcome, notes } = req.body || {};
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (scope.businessUnitFilter) filter.businessUnitId = scope.businessUnitFilter;
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter).lean();
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
@@ -489,15 +497,17 @@ export default class LeadsService {
             const { id } = req.params;
             const { ownerUserId } = req.body || {};
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
             if (!ownerUserId) {
                 return { success: false, message: 'ownerUserId is required' };
             }
             const assignedByUserId = req.user?.id || req.user?._id || req.body.assignedByUserId || '';
-            const filter = { _id: id, companyId, businessUnitId };
+            const filter = { _id: id, companyId };
+            if (scope.businessUnitFilter) filter.businessUnitId = scope.businessUnitFilter;
             const lead = await Lead.findOneAndUpdate(
                 filter,
                 { ownerUserId, assignedByUserId },
@@ -523,15 +533,17 @@ export default class LeadsService {
             const { id } = req.params;
             const { note } = req.body || {};
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
             if (!note) {
                 return { success: false, message: 'note is required' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (scope.businessUnitFilter) filter.businessUnitId = scope.businessUnitFilter;
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter).lean();
             if (!lead) {
                 return { success: false, message: 'Lead not found' };
@@ -563,11 +575,12 @@ export default class LeadsService {
             const { id } = req.params;
             const { status } = req.body || {};
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const buForStatus = await BusinessUnit.findById(businessUnitId).select('pipelineStages').lean();
+            const buForStatus = await BusinessUnit.findById(scope.businessUnitId).select('pipelineStages').lean();
             const validStatuses = buForStatus?.pipelineStages?.length > 0
                 ? buForStatus.pipelineStages.map((s) => s.key)
                 : LEAD_STATUSES;
@@ -582,8 +595,9 @@ export default class LeadsService {
             const isWon = stageType === 'won' || (!buForStatus?.pipelineStages?.length && status === 'CERRADO_GANADO');
             const eventType = isWon ? 'WON' : isClosing ? 'LOST' : 'NOTE_ADDED';
 
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (scope.businessUnitFilter) filter.businessUnitId = scope.businessUnitFilter;
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
 
             const updateFields = { status };
             if (isClosing) updateFields.closedAt = new Date();
@@ -815,11 +829,12 @@ export default class LeadsService {
             const { id } = req.params;
             const { eventType, note, eventAt } = req.body || {};
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
-            const bu = await BusinessUnit.findById(businessUnitId).select('activityTypes').lean();
+            const bu = await BusinessUnit.findById(scope.businessUnitId).select('activityTypes').lean();
             const allowedTypes = bu?.activityTypes?.length > 0
                 ? bu.activityTypes.map((a) => a.key)
                 : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
@@ -827,8 +842,9 @@ export default class LeadsService {
             if (!eventType || !allowedTypes.includes(eventType)) {
                 return { success: false, message: 'Invalid event type' };
             }
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (scope.businessUnitFilter) filter.businessUnitId = scope.businessUnitFilter;
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter).lean();
             if (!lead) return { success: false, message: 'Lead not found' };
 
@@ -872,13 +888,14 @@ export default class LeadsService {
             const eventType = req.body?.eventType;
             const note = req.body?.note;
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
+            const role = req.user?.role;
+            const scope = resolveLeadBusinessUnitScope({ req, role });
 
-            if (!companyId || !businessUnitId) {
-                return { success: false, message: 'Company and business unit context required' };
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
             }
 
-            const bu = await BusinessUnit.findById(businessUnitId).select('activityTypes').lean();
+            const bu = await BusinessUnit.findById(scope.businessUnitId).select('activityTypes').lean();
             const allowedTypes = bu?.activityTypes?.length > 0
                 ? bu.activityTypes.map((a) => a.key)
                 : ['CALL', 'CONTACT_SUCCESS', 'FOLLOWUP', 'WHATSAPP_SENT', 'EMAIL_SENT', 'QUOTE_SENT', 'RESCHEDULE', 'NOTE_ADDED'];
@@ -887,8 +904,9 @@ export default class LeadsService {
                 return { success: false, message: 'Invalid event type' };
             }
 
-            const filter = { _id: id, companyId, businessUnitId };
-            if (req.user?.role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const filter = { _id: id, companyId };
+            if (scope.businessUnitFilter) filter.businessUnitId = scope.businessUnitFilter;
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
             const lead = await Lead.findOne(filter).lean();
             if (!lead) return { success: false, message: 'Lead not found' };
 
