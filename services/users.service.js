@@ -1,6 +1,5 @@
 import connectMongoDB from '../libs/mongoose.js';
 import User from '../models/User.js';
-import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 
@@ -376,25 +375,14 @@ export default class UsersService {
             if (!companyId) return formatPaginationError('Company context required');
 
             const { page, limit, sort } = parsePaginationParams(req);
-            const filter = { companyId, roleName: 'EXECUTIVE' };
+            const filter = { companyId, roleName: { $in: ['EXECUTIVE', 'SUPERVISOR'] } };
 
             // If requester is SUPERVISOR, show executives assigned to them or in their BUs
             if (req.user?.role === 'SUPERVISOR') {
-                const supervisorId = req.user.id || req.user._id;
-                const buIds = (req.user.businessUnitIds || []).map((id) => {
-                    try { return new mongoose.Types.ObjectId(id); } catch { return id; }
-                });
                 filter.$or = [
-                    { supervisorId: String(supervisorId) },
-                    { supervisorId: supervisorId },
-                    ...(buIds.length > 0 ? [{ businessUnitIds: { $in: buIds } }] : []),
+                    { supervisorId: String(req.user.id || req.user._id) },
+                    { businessUnitIds: { $in: req.user.businessUnitIds } }
                 ];
-            }
-
-            // Filter by active BU when header is present (admin BU switcher)
-            const activeBuId = req.headers['x-business-unit-id'];
-            if (activeBuId && req.user?.role !== 'SUPERVISOR') {
-                filter.businessUnitIds = activeBuId;
             }
 
             const result = await User.paginate(
@@ -421,14 +409,8 @@ export default class UsersService {
             if (!companyId) return formatPaginationError('Company context required');
 
             const { page, limit, sort } = parsePaginationParams(req);
-            const filter = { companyId, roleName: 'SUPERVISOR' };
-
-            // Filter by active BU when header is present (admin BU switcher)
-            const activeBuId = req.headers['x-business-unit-id'];
-            if (activeBuId) filter.businessUnitIds = activeBuId;
-
             const result = await User.paginate(
-                filter,
+                { companyId, roleName: 'SUPERVISOR' },
                 { page, limit, sort, lean: true }
             );
 
