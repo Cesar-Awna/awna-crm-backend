@@ -31,6 +31,7 @@ export default class LeadsService {
 
             const {
                 status, ownerUserId,
+                businessUnitId: queryBusinessUnitId,
                 nextContactDateFrom, nextContactDateTo,
                 createdAtFrom, createdAtTo,
                 closedAtFrom, closedAtTo,
@@ -50,6 +51,10 @@ export default class LeadsService {
                 }
             } else if (scope.businessUnitId) {
                 filter.businessUnitId = scope.businessUnitId;
+            }
+
+            if (queryBusinessUnitId && (role === 'COMPANY_ADMIN' || role === 'SUPER_ADMIN')) {
+                filter.businessUnitId = queryBusinessUnitId;
             }
 
             if (status) filter.status = status;
