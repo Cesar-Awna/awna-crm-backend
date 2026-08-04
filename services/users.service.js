@@ -426,7 +426,7 @@ export default class UsersService {
 
     changePassword = async (req) => {
         try {
-            const userId = req.user?._id;
+            const userId = req.user?.id || req.user?._id;
             const { currentPassword, newPassword } = req.body || {};
 
             if (!userId) {
