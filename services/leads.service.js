@@ -416,7 +416,8 @@ export default class LeadsService {
                 return { success: false, message: 'Company context required' };
             }
             const userId = req.user?.id || req.user?._id;
-            const baseFilter = { companyId, nextContactDate: { $ne: null } };
+            const CLOSED_STATUSES = ['CERRADO_GANADO', 'CERRADO_PERDIDO', 'CLIENTE', 'NO_INTERESADO'];
+            const baseFilter = { companyId, nextContactDate: { $ne: null }, status: { $nin: CLOSED_STATUSES } };
             if (scope.businessUnitFilter) baseFilter.businessUnitId = scope.businessUnitFilter;
             if (role === 'EXECUTIVE') {
                 baseFilter.ownerUserId = userId;
