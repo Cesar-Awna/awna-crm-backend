@@ -153,7 +153,11 @@ export default class LeadsService {
     create = async (req) => {
         try {
             const companyId = req.companyId;
-            const businessUnitId = req.businessUnitId;
+            let businessUnitId = req.businessUnitId;
+            if (!businessUnitId && req.body?.ownerUserId) {
+                const owner = await User.findById(req.body.ownerUserId).select('businessUnitIds').lean();
+                businessUnitId = owner?.businessUnitIds?.[0] || null;
+            }
             if (!companyId || !businessUnitId) {
                 return { success: false, message: 'Company and business unit context required' };
             }
