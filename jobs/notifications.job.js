@@ -41,7 +41,7 @@ const generateNotifications = async () => {
             userId: String(lead.ownerUserId),
             leadId: String(lead._id),
             type: 'MEETING_TODAY',
-            createdAt: { $gte: todayStart },
+            readAt: null,
         })
             .select('_id')
             .lean();
@@ -75,7 +75,7 @@ const generateNotifications = async () => {
             userId: String(lead.ownerUserId),
             leadId: String(lead._id),
             type: 'LEAD_DORMANT',
-            createdAt: { $gte: todayStart },
+            readAt: null,
         })
             .select('_id')
             .lean();
@@ -129,7 +129,7 @@ const generateNotifications = async () => {
             userId: supervisorId,
             leadId: String(lead._id),
             type: 'LEAD_DORMANT_SUPERVISOR',
-            createdAt: { $gte: todayStart },
+            readAt: null,
         })
             .select('_id')
             .lean();
