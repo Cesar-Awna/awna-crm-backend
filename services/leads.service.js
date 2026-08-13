@@ -216,6 +216,18 @@ export default class LeadsService {
             delete updateBody.companyId;
             delete updateBody.businessUnitId;
 
+            // Activity counters are server-owned (incremented by logActivity and
+            // rebuilt from LeadEvents) — never let a form save overwrite them.
+            delete updateBody.callCount;
+            delete updateBody.contactSuccessCount;
+            delete updateBody.followupCount;
+            delete updateBody.whatsappSentCount;
+            delete updateBody.emailSentCount;
+            delete updateBody.quoteSentCount;
+            delete updateBody.rescheduleCount;
+            delete updateBody.closureCount;
+            delete updateBody.activityCounts;
+
             // Ensure nextContactDate is a valid Date object
             if (updateBody.nextContactDate && typeof updateBody.nextContactDate === 'string') {
                 updateBody.nextContactDate = new Date(updateBody.nextContactDate + 'T00:00:00Z');
