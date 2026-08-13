@@ -51,7 +51,7 @@ const userSchema = new Schema(
         },
         roleName: {
             type: String,
-            enum: ['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE'],
+            enum: ['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE', 'SOPORTE'],
             default: 'EXECUTIVE',
         },
     },

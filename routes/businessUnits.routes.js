@@ -12,7 +12,7 @@ router.use(authMiddleware, requireCompanyMiddleware);
 
 router.get(
     '/',
-    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE']),
+    requireRole(['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPERVISOR', 'EXECUTIVE', 'SOPORTE']),
     businessUnitsController.getAll
 );
 

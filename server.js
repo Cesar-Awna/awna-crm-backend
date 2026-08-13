@@ -20,6 +20,7 @@ import metricsRoutes from './routes/metrics.routes.js';
 import importsRoutes from './routes/imports.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import ticketsRoutes from './routes/tickets.routes.js';
 import { errorHandler } from './middlewares/errorHandler.middleware.js';
 import { startJobs } from './jobs/index.js';
 
@@ -87,6 +88,7 @@ app.use('/api/metrics', metricsRoutes);
 app.use('/api/imports', importsRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/tickets', ticketsRoutes);
 
 // Middleware global de manejo de errores (debe ir al final)
 app.use(errorHandler);

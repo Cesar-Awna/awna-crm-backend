@@ -27,6 +27,8 @@ const notificationSchema = new Schema(
                 'LEAD_DORMANT',
                 'LEAD_STAGNATION_CRITICAL',
                 'LEAD_DORMANT_SUPERVISOR',
+                'TICKET_NUEVO',
+                'TICKET_RESUELTO',
             ],
         },
         title: {
