@@ -32,6 +32,18 @@ const uploadPdf = async ({ filePath, publicId, folder }) => {
     });
 };
 
+const uploadImage = async ({ filePath, publicId, folder }) => {
+    if (!configureCloudinary()) throw new Error('Cloudinary is not configured');
+
+    return cloudinary.uploader.upload(filePath, {
+        resource_type: 'image',
+        type: 'upload',
+        public_id: publicId,
+        folder,
+        overwrite: true,
+    });
+};
+
 const getPdfThumbnailUrl = (publicId) => {
     const cloud = process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_URL?.match(/@(.+)$/)?.[1];
     if (!cloud) return null;
@@ -65,6 +77,7 @@ const deleteRawAsset = async ({ publicId }) => {
 export {
     hasCloudinaryConfig,
     uploadPdf,
+    uploadImage,
     getPdfThumbnailUrl,
     buildSignedDownloadUrl,
     deleteRawAsset,

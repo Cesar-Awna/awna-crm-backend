@@ -2,6 +2,9 @@ import connectMongoDB from '../libs/mongoose.js';
 import Ticket from '../models/Ticket.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
+import { uploadImage } from '../libs/cloudinary.js';
+
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB
 
 const TICKET_TYPES = [
     'ERROR_SISTEMA',
@@ -42,6 +45,27 @@ export default class TicketsService {
                 reporter?.businessUnitIds?.[0] ||
                 null;
 
+            // Direct image upload takes precedence over a pasted link
+            let finalEvidenceUrl = String(evidenceUrl || '').trim();
+            if (req.files?.image) {
+                const file = req.files.image;
+                if (!String(file.mimetype || '').startsWith('image/')) {
+                    return { success: false, message: 'El archivo debe ser una imagen (PNG, JPG, etc.)' };
+                }
+                if (file.size > MAX_IMAGE_BYTES) {
+                    return { success: false, message: 'La imagen supera el máximo de 8MB' };
+                }
+                const safeName = String(file.name || 'captura')
+                    .replace(/\s+/g, '_')
+                    .replace(/[^a-zA-Z0-9._-]/g, '');
+                const uploaded = await uploadImage({
+                    filePath: file.tempFilePath,
+                    publicId: `${Date.now()}_${safeName}`,
+                    folder: `tickets/${companyId}`,
+                });
+                finalEvidenceUrl = uploaded.secure_url;
+            }
+
             const ticket = await Ticket.create({
                 companyId,
                 businessUnitId,
@@ -50,7 +74,7 @@ export default class TicketsService {
                 type,
                 title: String(title).trim(),
                 description: String(description || '').trim(),
-                evidenceUrl: String(evidenceUrl || '').trim(),
+                evidenceUrl: finalEvidenceUrl,
                 status: 'ABIERTO',
             });
 
