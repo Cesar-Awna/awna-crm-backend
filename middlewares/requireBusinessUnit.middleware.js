@@ -22,10 +22,13 @@ export const requireBusinessUnitMiddleware = (req, res, next) => {
             userId: req.user._id || req.user.id,
         });
 
-        // COMPANY_ADMIN can access all business units (omit header for "all")
-        if (req.user.role === 'COMPANY_ADMIN' && !businessUnitId) {
-            req.businessUnitId = null;
-            console.log('✅ COMPANY_ADMIN without header allowed');
+        // COMPANY_ADMIN can access all business units of their company:
+        // without header → all BUs; with header → use it as a filter without
+        // requiring it in their personal businessUnitIds (admins may have none,
+        // and stale sessions/BU switcher state must not lock them out).
+        if (req.user.role === 'COMPANY_ADMIN') {
+            req.businessUnitId = businessUnitId || null;
+            console.log('✅ COMPANY_ADMIN allowed', businessUnitId ? `(BU filter ${businessUnitId})` : '(all BUs)');
             return next();
         }
 
