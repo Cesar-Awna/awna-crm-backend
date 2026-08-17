@@ -44,6 +44,21 @@ const uploadImage = async ({ filePath, publicId, folder }) => {
     });
 };
 
+/**
+ * Enlace temporal de descarga para adjuntos subidos como raw/upload.
+ * La cuenta bloquea la entrega directa de PDFs (401 en res.cloudinary.com
+ * incluso firmada); el endpoint /download autenticado sí entrega el archivo.
+ */
+const buildAttachmentDownloadUrl = ({ publicId, expiresInSeconds = 300 } = {}) => {
+    if (!configureCloudinary()) throw new Error('Cloudinary is not configured');
+    const expiresAt = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    return cloudinary.utils.private_download_url(publicId, '', {
+        resource_type: 'raw',
+        type: 'upload',
+        expires_at: expiresAt,
+    });
+};
+
 const getPdfThumbnailUrl = (publicId) => {
     const cloud = process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_URL?.match(/@(.+)$/)?.[1];
     if (!cloud) return null;
@@ -80,5 +95,6 @@ export {
     uploadImage,
     getPdfThumbnailUrl,
     buildSignedDownloadUrl,
+    buildAttachmentDownloadUrl,
     deleteRawAsset,
 };

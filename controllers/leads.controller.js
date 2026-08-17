@@ -163,6 +163,16 @@ export default class LeadsController {
         }
     };
 
+    getAttachmentUrl = async (req, res) => {
+        try {
+            const response = await leadsService.getAttachmentUrl(req);
+            return res.status(response.success ? 200 : 404).json(response);
+        } catch (error) {
+            console.error('❌ Controller error:', error);
+            return res.status(500).json({ success: false, message: 'Unexpected controller error' });
+        }
+    };
+
     getStats = async (req, res) => {
         try {
             const response = await leadsService.getStats(req);

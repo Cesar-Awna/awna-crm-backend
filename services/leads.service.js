@@ -6,7 +6,7 @@ import BusinessUnit from '../models/BusinessUnit.js';
 import { getStageInfo } from '../utils/stageInfo.js';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 import { resolveLeadBusinessUnitScope } from '../utils/leadScope.js';
-import { uploadPdf, getPdfThumbnailUrl } from '../libs/cloudinary.js';
+import { uploadPdf, getPdfThumbnailUrl, buildAttachmentDownloadUrl } from '../libs/cloudinary.js';
 
 export default class LeadsService {
     constructor() {
@@ -1015,6 +1015,43 @@ export default class LeadsService {
         } catch (error) {
             console.error('❌ Service error:', error);
             return { success: false, message: 'Error retrieving events' };
+        }
+    };
+
+    // Genera un enlace temporal (5 min) para ver el adjunto de un evento.
+    // Solo lectura: no modifica eventos, leads ni archivos.
+    getAttachmentUrl = async (req) => {
+        try {
+            const { eventId } = req.params;
+            const companyId = req.companyId;
+            const role = req.user?.role;
+            const userBusinessUnitIds = req.user?.businessUnitIds || [];
+            if (!companyId) {
+                return { success: false, message: 'Company context required' };
+            }
+
+            const event = await LeadEvent.findOne({ _id: eventId, companyId }).lean();
+            if (!event) return { success: false, message: 'Evento no encontrado' };
+
+            const publicId = event.metadata?.filePublicId;
+            if (!publicId) {
+                return { success: false, message: 'El evento no tiene archivo adjunto' };
+            }
+
+            // Same access rules as getEvents: the requester must reach the lead
+            const filter = { _id: event.leadId, companyId };
+            if (role === 'SUPERVISOR' && userBusinessUnitIds.length > 0) {
+                filter.businessUnitId = { $in: userBusinessUnitIds };
+            }
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const lead = await Lead.findOne(filter, '_id').lean();
+            if (!lead) return { success: false, message: 'Lead not found' };
+
+            const url = buildAttachmentDownloadUrl({ publicId });
+            return { success: true, message: 'Attachment URL generated', data: { url } };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error generando enlace del adjunto' };
         }
     };
 

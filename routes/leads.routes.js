@@ -139,6 +139,12 @@ router.get(
     leadsController.getEvents
 );
 
+router.get(
+    '/events/:eventId/attachment',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.getAttachmentUrl
+);
+
 router.patch(
     '/:id/dismiss-followup',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
