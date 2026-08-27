@@ -18,6 +18,7 @@ const activityTypeSchema = new Schema({
     label:      { type: String, required: true },
     pointValue: { type: Number, default: 1 },
     dailyCap:   { type: Number, default: 10 },
+    requiresLocation: { type: Boolean, default: false },
 }, { _id: false });
 
 const pipelineStageSchema = new Schema({

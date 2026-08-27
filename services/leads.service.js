@@ -8,6 +8,23 @@ import { parsePaginationParams, formatPaginatedResponse, formatPaginationError }
 import { resolveLeadBusinessUnitScope } from '../utils/leadScope.js';
 import { uploadPdf, getPdfThumbnailUrl, buildAttachmentDownloadUrl } from '../libs/cloudinary.js';
 
+// Ubicación del dispositivo enviada por el cliente al registrar actividades de terreno.
+// Acepta objeto o JSON string (multipart). Devuelve null si no viene o es inválida.
+const parseLocation = (raw) => {
+    if (!raw) return null;
+    let loc = raw;
+    if (typeof raw === 'string') {
+        try { loc = JSON.parse(raw); } catch { return null; }
+    }
+    const lat = Number(loc?.lat);
+    const lng = Number(loc?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    const out = { lat, lng, capturedAt: new Date() };
+    const acc = Number(loc?.accuracy);
+    if (Number.isFinite(acc)) out.accuracy = Math.round(acc);
+    return out;
+};
+
 export default class LeadsService {
     constructor() {
         connectMongoDB();
@@ -864,6 +881,12 @@ export default class LeadsService {
             if (!eventType || !allowedTypes.includes(eventType)) {
                 return { success: false, message: 'Invalid event type' };
             }
+            // Actividades de terreno (configuradas por BU con requiresLocation) exigen la ubicación del dispositivo
+            const typeCfg = (bu?.activityTypes || []).find((a) => a.key === eventType);
+            const location = parseLocation(req.body?.location);
+            if (typeCfg?.requiresLocation && !location) {
+                return { success: false, message: 'Esta actividad requiere la ubicación del dispositivo. Permite el acceso a tu ubicación e inténtalo de nuevo.' };
+            }
             const filter = { _id: id, companyId };
             if (scope.businessUnitFilter) filter.businessUnitId = scope.businessUnitFilter;
             if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
@@ -892,7 +915,7 @@ export default class LeadsService {
                     userId: req.user?.id || req.body.userId || '',
                     eventType,
                     eventAt: eventAt ? new Date(eventAt) : new Date(),
-                    metadata: { note },
+                    metadata: { note, ...(location ? { location } : {}) },
                 }),
                 Lead.updateOne({ _id: lead._id }, { $inc: incObj }),
             ]);
@@ -924,6 +947,11 @@ export default class LeadsService {
 
             if (!eventType || !allowedTypes.includes(eventType)) {
                 return { success: false, message: 'Invalid event type' };
+            }
+            const typeCfg = (bu?.activityTypes || []).find((a) => a.key === eventType);
+            const location = parseLocation(req.body?.location);
+            if (typeCfg?.requiresLocation && !location) {
+                return { success: false, message: 'Esta actividad requiere la ubicación del dispositivo. Permite el acceso a tu ubicación e inténtalo de nuevo.' };
             }
 
             const filter = { _id: id, companyId };
@@ -972,7 +1000,7 @@ export default class LeadsService {
                     userId: req.user?.id || req.user?._id || '',
                     eventType,
                     eventAt: new Date(),
-                    metadata: { note, signedUrl, attachmentName, thumbnailUrl, filePublicId },
+                    metadata: { note, signedUrl, attachmentName, thumbnailUrl, filePublicId, ...(location ? { location } : {}) },
                 }),
                 Lead.updateOne({ _id: lead._id }, { $inc: incObj }),
             ]);

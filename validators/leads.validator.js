@@ -60,6 +60,15 @@ export const addNoteSchema = Joi.object({
 }).unknown(false);
 
 export const logActivitySchema = Joi.object({
+    // Ubicación del dispositivo (actividades de terreno). Objeto en JSON o string en multipart.
+    location: Joi.alternatives().try(
+        Joi.object({
+            lat: Joi.number().min(-90).max(90).required(),
+            lng: Joi.number().min(-180).max(180).required(),
+            accuracy: Joi.number().min(0).optional(),
+        }),
+        Joi.string().max(500)
+    ).optional(),
   eventType: Joi.string().required().messages({
     'string.empty': 'eventType es obligatorio',
   }),
