@@ -139,6 +139,12 @@ router.get(
     leadsController.getEvents
 );
 
+router.post(
+    '/events/notes-bulk',
+    requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),
+    leadsController.getNotesBulk
+);
+
 router.get(
     '/events/:eventId/attachment',
     requireRole(['EXECUTIVE', 'SUPERVISOR', 'COMPANY_ADMIN']),

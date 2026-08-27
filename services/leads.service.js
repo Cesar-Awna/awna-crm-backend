@@ -1055,6 +1055,48 @@ export default class LeadsService {
         }
     };
 
+    // Hitos (NOTE_ADDED) de muchos leads en una sola consulta — solo lectura.
+    // Aplica el mismo alcance que getEvents: el usuario solo recibe hitos de leads a los que puede acceder.
+    getNotesBulk = async (req) => {
+        try {
+            const companyId = req.companyId;
+            const role = req.user?.role;
+            const userBusinessUnitIds = req.user?.businessUnitIds || [];
+            if (!companyId) return { success: false, message: 'Company context required' };
+
+            const rawIds = Array.isArray(req.body?.leadIds) ? req.body.leadIds : [];
+            const ids = rawIds.map(String).filter((id) => /^[a-f0-9]{24}$/i.test(id)).slice(0, 500);
+            if (ids.length === 0) return { success: true, message: 'No leads', data: {} };
+
+            const filter = { _id: { $in: ids }, companyId };
+            if (role === 'SUPERVISOR' && userBusinessUnitIds.length > 0) {
+                filter.businessUnitId = { $in: userBusinessUnitIds };
+            }
+            if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+            const allowed = await Lead.find(filter, '_id').lean();
+            const allowedIds = allowed.map((l) => l._id);
+            if (allowedIds.length === 0) return { success: true, message: 'No leads', data: {} };
+
+            const events = await LeadEvent.find({ leadId: { $in: allowedIds }, companyId, eventType: 'NOTE_ADDED' })
+                .select('leadId eventAt createdAt metadata.note')
+                .sort({ eventAt: 1 })
+                .lean();
+
+            const data = {};
+            for (const ev of events) {
+                const note = String(ev.metadata?.note || '').trim();
+                if (!note) continue;
+                const key = String(ev.leadId);
+                if (!data[key]) data[key] = [];
+                data[key].push({ at: ev.eventAt || ev.createdAt, note });
+            }
+            return { success: true, message: 'Notes retrieved', data };
+        } catch (error) {
+            console.error('❌ Service error:', error);
+            return { success: false, message: 'Error retrieving notes' };
+        }
+    };
+
     getStats = async (req) => {
         try {
             const companyId = req.companyId;
