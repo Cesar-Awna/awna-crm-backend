@@ -883,7 +883,8 @@ export default class LeadsService {
             }
             // Actividades de terreno (configuradas por BU con requiresLocation) exigen la ubicación del dispositivo
             const typeCfg = (bu?.activityTypes || []).find((a) => a.key === eventType);
-            const location = parseLocation(req.body?.location);
+            // Solo se conserva la ubicación en actividades que la requieren; en las demás se ignora aunque venga
+            const location = typeCfg?.requiresLocation ? parseLocation(req.body?.location) : null;
             if (typeCfg?.requiresLocation && !location) {
                 return { success: false, message: 'Esta actividad requiere la ubicación del dispositivo. Permite el acceso a tu ubicación e inténtalo de nuevo.' };
             }
@@ -949,7 +950,8 @@ export default class LeadsService {
                 return { success: false, message: 'Invalid event type' };
             }
             const typeCfg = (bu?.activityTypes || []).find((a) => a.key === eventType);
-            const location = parseLocation(req.body?.location);
+            // Solo se conserva la ubicación en actividades que la requieren; en las demás se ignora aunque venga
+            const location = typeCfg?.requiresLocation ? parseLocation(req.body?.location) : null;
             if (typeCfg?.requiresLocation && !location) {
                 return { success: false, message: 'Esta actividad requiere la ubicación del dispositivo. Permite el acceso a tu ubicación e inténtalo de nuevo.' };
             }
