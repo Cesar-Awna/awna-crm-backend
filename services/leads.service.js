@@ -3,7 +3,7 @@ import Lead, { LEAD_STATUSES } from '../models/Lead.js';
 import LeadEvent from '../models/LeadEvent.js';
 import User from '../models/User.js';
 import BusinessUnit from '../models/BusinessUnit.js';
-import { getStageInfo } from '../utils/stageInfo.js';
+import { getStageInfo, FALLBACK_CLOSED } from '../utils/stageInfo.js';
 import { parsePaginationParams, formatPaginatedResponse, formatPaginationError } from '../utils/pagination.js';
 import { resolveLeadBusinessUnitScope } from '../utils/leadScope.js';
 import { uploadPdf, getPdfThumbnailUrl, buildAttachmentDownloadUrl } from '../libs/cloudinary.js';
@@ -449,7 +449,14 @@ export default class LeadsService {
                 return { success: false, message: 'Company context required' };
             }
             const userId = req.user?.id || req.user?._id;
-            const CLOSED_STATUSES = ['CERRADO_GANADO', 'CERRADO_PERDIDO', 'CLIENTE', 'NO_INTERESADO'];
+            // Estados cerrados según la config real de cada BU (ganado + perdido + descarte).
+            // Antes era una lista fija que omitía DATO_ERRADO; ahora se toma de getStageInfo,
+            // así los descartados/perdidos no reaparecen en "Seguimientos vencidos" y queda a prueba de futuros estados.
+            const buIds = scope.effectiveBusinessUnitIds?.length ? scope.effectiveBusinessUnitIds : [];
+            const stageInfos = await Promise.all(buIds.map((id) => getStageInfo(id)));
+            const CLOSED_STATUSES = buIds.length
+                ? [...new Set(stageInfos.flatMap((i) => i.closedKeys))]
+                : FALLBACK_CLOSED;
             const baseFilter = { companyId, nextContactDate: { $ne: null }, status: { $nin: CLOSED_STATUSES } };
             if (scope.businessUnitFilter) baseFilter.businessUnitId = scope.businessUnitFilter;
             if (role === 'EXECUTIVE') {
