@@ -193,6 +193,13 @@ export default class LeadsService {
                 payload.ownerUserId = req.user?.id || req.user?._id;
             }
 
+            // Getnet: un lead creado manualmente por un ejecutivo siempre queda con
+            // origen "Puerta a puerta" (forzado, no editable desde el formulario).
+            const GETNET_BU_ID = '6a61524d0f799ca484832ca1';
+            if (role === 'EXECUTIVE' && String(businessUnitId) === GETNET_BU_ID) {
+                payload.fields = { ...(payload.fields || {}), origen: 'Puerta a puerta' };
+            }
+
             if (!payload.status) {
                 payload.status = 'NUEVO';
             }
