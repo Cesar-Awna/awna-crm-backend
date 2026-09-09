@@ -1,17 +1,13 @@
 import Joi from 'joi';
 
-const LEAD_STATUSES = ['NUEVO', 'DATO_ERRADO', 'CONTACTADO', 'INTERESADO', 'COTIZACION_ENVIADA', 'EN_SEGUIMIENTO', 'CERRADO_GANADO', 'CERRADO_PERDIDO', 'CLIENTE', 'NO_INTERESADO'];
-
+// Los estados son dinámicos por unidad de negocio (BusinessUnit.pipelineStages),
+// así que NO se validan con una lista fija aquí: la validez del estado se comprueba
+// contra la config de la BU en el servicio (change-status) al momento de usarse.
 const ACTION_TYPES = ['LLAMADA', 'ENVIAR_INFO', 'REUNION', 'NOTA'];
 
 export const createLeadSchema = Joi.object({
   ownerUserId: Joi.string().optional(),
-  status: Joi.string()
-    .valid(...LEAD_STATUSES)
-    .optional()
-    .messages({
-      'any.only': `Status debe ser uno de: ${LEAD_STATUSES.join(', ')}`,
-    }),
+  status: Joi.string().optional(),
   razonSocial: Joi.string().optional(),
   rutEmpresa: Joi.string().optional(),
   contactName: Joi.string().optional(),
@@ -32,10 +28,8 @@ export const createLeadSchema = Joi.object({
 
 export const changeStatusSchema = Joi.object({
   status: Joi.string()
-    .valid(...LEAD_STATUSES)
     .required()
     .messages({
-      'any.only': `Status debe ser uno de: ${LEAD_STATUSES.join(', ')}`,
       'string.empty': 'Status es obligatorio',
     }),
 }).unknown(false);
