@@ -58,9 +58,11 @@ const leadSchema = new Schema(
             trim: true,
         },
         status: {
+            // Sin enum fijo: los estados son dinámicos por unidad de negocio
+            // (BusinessUnit.pipelineStages). La validez se comprueba contra la
+            // config de la BU en el servicio (change-status).
             type: String,
             default: 'NUEVO',
-            enum: LEAD_STATUSES,
             index: true,
         },
         observation: {
