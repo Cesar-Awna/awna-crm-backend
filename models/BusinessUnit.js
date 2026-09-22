@@ -27,6 +27,8 @@ const pipelineStageSchema = new Schema({
     order:     { type: Number, default: 0 },
     color:     String,
     stageType: { type: String, enum: ['open', 'won', 'lost', 'invalid'], default: 'open' },
+    // Estado abierto que NO debe aparecer en "Seguimientos vencidos" (ej. Carterizado)
+    skipFollowup: { type: Boolean, default: false },
 }, { _id: false });
 
 const businessUnitSchema = new Schema(

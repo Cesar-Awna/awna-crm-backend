@@ -17,6 +17,7 @@ const FALLBACK_RESULT = {
     lostKeys:    FALLBACK_LOST,
     invalidKeys: FALLBACK_INVALID,
     closedKeys:  FALLBACK_CLOSED,
+    skipFollowupKeys: [],
 };
 
 /**
@@ -37,13 +38,15 @@ export const getStageInfo = async (businessUnitId) => {
     const lostKeys    = stages.filter((s) => s.stageType === 'lost').map((s) => s.key);
     const invalidKeys = stages.filter((s) => s.stageType === 'invalid').map((s) => s.key);
     const closedKeys  = [...wonKeys, ...lostKeys, ...invalidKeys];
+    // Estados abiertos marcados para NO nag en "Seguimientos vencidos" (ej. Carterizado)
+    const skipFollowupKeys = stages.filter((s) => s.skipFollowup).map((s) => s.key);
 
     if (closedKeys.length === 0) {
         // Stages configured but no terminal types set — keep custom status keys, use hardcoded terminals
-        return { statusKeys, wonKeys: FALLBACK_WON, lostKeys: FALLBACK_LOST, invalidKeys: FALLBACK_INVALID, closedKeys: FALLBACK_CLOSED };
+        return { statusKeys, wonKeys: FALLBACK_WON, lostKeys: FALLBACK_LOST, invalidKeys: FALLBACK_INVALID, closedKeys: FALLBACK_CLOSED, skipFollowupKeys };
     }
 
-    return { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys };
+    return { statusKeys, wonKeys, lostKeys, invalidKeys, closedKeys, skipFollowupKeys };
 };
 
 /**

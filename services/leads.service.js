@@ -461,10 +461,11 @@ export default class LeadsService {
             // así los descartados/perdidos no reaparecen en "Seguimientos vencidos" y queda a prueba de futuros estados.
             const buIds = scope.effectiveBusinessUnitIds?.length ? scope.effectiveBusinessUnitIds : [];
             const stageInfos = await Promise.all(buIds.map((id) => getStageInfo(id)));
-            const CLOSED_STATUSES = buIds.length
-                ? [...new Set(stageInfos.flatMap((i) => i.closedKeys))]
+            // Excluir de "Seguimientos vencidos": estados cerrados + estados marcados "skipFollowup" (ej. Carterizado)
+            const EXCLUDED_STATUSES = buIds.length
+                ? [...new Set(stageInfos.flatMap((i) => [...i.closedKeys, ...(i.skipFollowupKeys || [])]))]
                 : FALLBACK_CLOSED;
-            const baseFilter = { companyId, nextContactDate: { $ne: null }, status: { $nin: CLOSED_STATUSES } };
+            const baseFilter = { companyId, nextContactDate: { $ne: null }, status: { $nin: EXCLUDED_STATUSES } };
             if (scope.businessUnitFilter) baseFilter.businessUnitId = scope.businessUnitFilter;
             if (role === 'EXECUTIVE') {
                 baseFilter.ownerUserId = userId;
