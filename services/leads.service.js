@@ -52,6 +52,7 @@ export default class LeadsService {
                 nextContactDateFrom, nextContactDateTo,
                 createdAtFrom, createdAtTo,
                 closedAtFrom, closedAtTo,
+                activityFrom, activityTo, activityType,
                 fuenteLead, productoCotizado,
                 q, assigned,
             } = req.query || {};
@@ -111,6 +112,28 @@ export default class LeadsService {
             }
 
             if (role === 'EXECUTIVE') filter.ownerUserId = req.user?.id || req.user?._id;
+
+            // Filtro por "fecha de actividad": muestra los leads trabajados (con
+            // eventos en la bitácora) dentro del rango dado. Solo se activa si
+            // llegan activityFrom/activityTo; sin ellos el listado no cambia nada.
+            if (activityFrom || activityTo) {
+                const eventAt = {};
+                if (activityFrom) { const d = new Date(activityFrom); if (!isNaN(d)) eventAt.$gte = d; }
+                if (activityTo) { const d = new Date(activityTo); if (!isNaN(d)) eventAt.$lte = d; }
+                if (Object.keys(eventAt).length) {
+                    const eventFilter = { companyId, eventAt };
+                    if (filter.businessUnitId) eventFilter.businessUnitId = filter.businessUnitId;
+                    // Quién hizo la actividad: el ejecutivo ve la suya; un supervisor/admin
+                    // que mira a un ejecutivo concreto (ownerUserId) filtra por ese ejecutivo.
+                    const activityUserId = role === 'EXECUTIVE'
+                        ? (req.user?.id || req.user?._id)
+                        : ownerUserId;
+                    if (activityUserId) eventFilter.userId = String(activityUserId);
+                    if (activityType) eventFilter.eventType = activityType;
+                    const leadIds = await LeadEvent.distinct('leadId', eventFilter);
+                    filter._id = { $in: leadIds };
+                }
+            }
 
             const { page, limit, sort } = parsePaginationParams(req);
 
